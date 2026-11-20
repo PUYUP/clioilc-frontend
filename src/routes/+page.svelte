@@ -8,6 +8,7 @@
   import { loadProjectNames, projectLabeler } from "$lib/activity.js";
   import RankedBars from "$lib/RankedBars.svelte";
   import { current, scope } from "$lib/scope.svelte.js";
+  import { wsLabel } from "$lib/team.svelte.js";
   import { session } from "$lib/session.svelte.js";
   import { vault } from "$lib/vault.svelte.js";
   import { METRICS, RANGES, loadBreakdown, loadCalendar, loadSeries, totals } from "$lib/usage.js";
@@ -140,7 +141,7 @@
 {:else}
   {#if team}
     <p class="team-banner">
-      Team usage of <a href={`/workspaces/${team.slug}`}><strong>{team.name}</strong></a>: folders members linked with
+      Team usage of <a href={`/workspaces/${team.slug}`}><strong>{wsLabel(team)}</strong></a>: folders members linked with
       <code>clioilc link</code>. Switch to Personal in the header for your own data.
     </p>
   {/if}

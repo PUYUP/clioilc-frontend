@@ -7,6 +7,7 @@
   import { renderMarkdown } from "$lib/markdown.js";
   import Login from "$lib/Login.svelte";
   import { current } from "$lib/scope.svelte.js";
+  import { wsLabel } from "$lib/team.svelte.js";
   import { session } from "$lib/session.svelte.js";
   import { unlockVault, vault } from "$lib/vault.svelte.js";
 
@@ -240,7 +241,7 @@
     {#each data.notes ?? [] as note (note)}<p class="small team-note warn-note">{note}</p>{/each}
     {#if team}
       <p class="muted small team-note">
-        Team view of <strong>{current()?.name ?? "this workspace"}</strong>: usage and tool actions from linked folders.
+        Team view of <strong>{current() ? wsLabel(/** @type {any} */ (current())) : "this workspace"}</strong>: usage and tool actions from linked folders.
         Teammates' prompts and replies appear only if they share them.
       </p>
     {/if}
