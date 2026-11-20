@@ -237,6 +237,7 @@
       {/if}
       <input type="search" bind:value={query} placeholder="Search text or tool…" aria-label="Search" />
     </div>
+    {#each data.notes ?? [] as note (note)}<p class="small team-note warn-note">{note}</p>{/each}
     {#if team}
       <p class="muted small team-note">
         Team view of <strong>{current()?.name ?? "this workspace"}</strong>: usage and tool actions from linked folders.
@@ -464,4 +465,5 @@
   }
   .team-note { margin: -4px 0 12px; }
   .who { font-size: 13px; color: var(--text-secondary); margin-right: 6px; }
+  .warn-note { color: var(--critical); }
 </style>

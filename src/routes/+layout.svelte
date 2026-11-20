@@ -5,12 +5,25 @@
   import { goto } from "$app/navigation";
   import { session, refreshSession, logout } from "$lib/session.svelte.js";
   import { scope, refreshWorkspaces, setScope } from "$lib/scope.svelte.js";
+  import { decryptNames, loadKeys, loadMe, team, wsLabel } from "$lib/team.svelte.js";
+  import { vault } from "$lib/vault.svelte.js";
 
   let { children } = $props();
   onMount(refreshSession);
 
   $effect(() => {
-    if (session.user) refreshWorkspaces();
+    if (session.user) refreshWorkspaces().then(() => loadMe().catch(() => {}));
+  });
+
+  // E2E workspace names are sealed: open them once the passphrase is unlocked.
+  $effect(() => {
+    if (!vault.dataKey || team.me?.enc_mode !== "e2e") return;
+    for (const w of scope.workspaces) {
+      if (w.enc_mode !== "e2e" || !w.key_version) continue;
+      loadKeys(w.slug)
+        .then(() => decryptNames(w))
+        .catch(() => {});
+    }
   });
 
   /** @param {Event & { currentTarget: HTMLSelectElement }} e */
@@ -34,7 +47,7 @@
           <select class="scope" aria-label="Show data of" value={scope.workspace ?? ""} onchange={pickScope}>
             <option value="">Personal</option>
             {#each scope.workspaces as w (w.slug)}
-              <option value={w.slug}>{w.name}</option>
+              <option value={w.slug}>{wsLabel(w)}{w.enc_mode === "e2e" ? " 🔒" : ""}</option>
             {/each}
             <option value="__manage">{scope.workspaces.length ? "Manage workspaces…" : "Create a workspace…"}</option>
           </select>

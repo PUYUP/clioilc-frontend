@@ -7,6 +7,9 @@
   import Login from "$lib/Login.svelte";
   import { scope, refreshWorkspaces, setScope } from "$lib/scope.svelte.js";
   import { session } from "$lib/session.svelte.js";
+  import { installKey, isE2EAccount, loadMe, team, wsLabel } from "$lib/team.svelte.js";
+  import Unlock from "$lib/Unlock.svelte";
+  import { vault } from "$lib/vault.svelte.js";
 
   /** @typedef {{ id: number, workspace: { slug: string, name: string }, project: { slug: string, name: string } | null, role: string, invited_by: string | null, expires_at: string }} Invite */
 
@@ -16,6 +19,12 @@
   let name = $state("");
   let slug = $state("");
   let slugTouched = $state(false);
+  /** @type {"server" | "e2e"} */
+  let mode = $state("server");
+
+  $effect(() => {
+    if (session.user) loadMe().catch(() => {});
+  });
 
   // Suggest a slug from the name until the user edits it.
   $effect(() => {
@@ -42,7 +51,15 @@
     busy = true;
     error = null;
     try {
-      const ws = await api("/api/v1/workspaces/", { method: "POST", body: { slug, name } });
+      let ws;
+      if (mode === "e2e") {
+        // Two steps: the workspace is created without a name, then key v1 is
+        // installed with the name sealed under it (docs/e2e-teams.md).
+        ws = await api("/api/v1/workspaces/", { method: "POST", body: { slug, enc_mode: "e2e" } });
+        await installKey(ws.slug, "ws", ws.id, { name });
+      } else {
+        ws = await api("/api/v1/workspaces/", { method: "POST", body: { slug, name } });
+      }
       await refreshWorkspaces();
       setScope(ws.slug);
       goto(`/workspaces/${ws.slug}`);
@@ -115,7 +132,7 @@
         {#each scope.workspaces as w (w.slug)}
           <li class="row">
             <div class="grow">
-              <a href={`/workspaces/${w.slug}`}><strong>{w.name}</strong></a>
+              <a href={`/workspaces/${w.slug}`}><strong>{wsLabel(w)}</strong></a>{#if w.enc_mode === "e2e"}<span class="badge" title="End-to-end encrypted">E2E</span>{/if}
               <span class="muted small">{w.slug} · {w.role ?? "project collaborator"}</span>
             </div>
             <button class="btn" onclick={() => (setScope(w.slug), goto("/"))}>View usage</button>
@@ -145,8 +162,21 @@
         oninput={() => (slugTouched = true)}
         required
       />
-      <p class="muted small hint">Used in <code>clioilc link {slug || "acme"}/&lt;project&gt;</code>. Lowercase letters, digits and dashes.</p>
-      <div><button class="btn primary" type="submit" disabled={busy || !name || !slug}>Create workspace</button></div>
+      <p class="muted small hint">Used in <code>clioilc link {slug || "acme"}/&lt;project&gt;</code>. Lowercase letters, digits and dashes.{mode === "e2e" ? " The URL name is not encrypted; pick one that does not give away a client or project." : ""}</p>
+      {#if isE2EAccount()}
+        <fieldset class="mode">
+          <legend class="small">Encryption</legend>
+          <label class="small"><input type="radio" bind:group={mode} value="server" /> Server — the server can read shared data (simplest)</label>
+          <label class="small"><input type="radio" bind:group={mode} value="e2e" /> End-to-end — only members can read names and shared data. Members must be end-to-end accounts. Cannot be changed later.</label>
+        </fieldset>
+        {#if mode === "e2e" && !vault.dataKey}
+          <Unlock title="Unlock to create an end-to-end workspace" />
+        {/if}
+      {/if}
+      <div><button class="btn primary" type="submit" disabled={busy || !name || !slug || (mode === "e2e" && !vault.dataKey)}>Create workspace</button></div>
+      {#if mode === "e2e" && team.fingerprint}
+        <p class="muted small hint">Your fingerprint: <code>{team.fingerprint.toUpperCase().match(/.{4}/g)?.join(" ")}</code></p>
+      {/if}
     </form>
   </section>
 {/if}
@@ -165,4 +195,8 @@
   .actions { display: flex; gap: 8px; }
   form { display: grid; gap: 6px; max-width: 360px; }
   .hint { margin: 0 0 6px; }
+  .badge { font-size: 11px; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--ghost); color: var(--text-secondary); }
+  .mode { border: 0; padding: 0; margin: 4px 0 8px; display: grid; gap: 6px; }
+  .mode legend { margin-bottom: 4px; }
+  .mode label { display: flex; gap: 8px; align-items: flex-start; }
 </style>

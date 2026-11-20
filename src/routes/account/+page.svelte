@@ -3,7 +3,20 @@
   import { API, api, ApiError } from "$lib/api.js";
   import Login from "$lib/Login.svelte";
   import { session } from "$lib/session.svelte.js";
-  import { lockVault } from "$lib/vault.svelte.js";
+  import { lockVault, vault } from "$lib/vault.svelte.js";
+  import { ensureIdentity, isE2EAccount, loadMe, team } from "$lib/team.svelte.js";
+  import { showFingerprint } from "$lib/team-keys.js";
+  import Unlock from "$lib/Unlock.svelte";
+
+  let identityError = $state(/** @type {string | null} */ (null));
+  $effect(() => {
+    if (session.user) loadMe().catch(() => {});
+  });
+  // Opening (or creating) the identity needs the unlocked data key.
+  $effect(() => {
+    if (!vault.dataKey || !isE2EAccount()) return;
+    ensureIdentity().catch((e) => (identityError = e instanceof Error ? e.message : "Failed to load your identity."));
+  });
 
   let exporting = $state(false);
   let exportError = $state(/** @type {string | null} */ (null));
@@ -55,6 +68,26 @@
     <h1>Account</h1>
     <p class="muted small">Signed in with GitHub as <strong>{username}</strong>.</p>
   </div>
+
+  {#if isE2EAccount()}
+    <section class="card">
+      <h2>Team identity</h2>
+      <p class="muted small">
+        Used for end-to-end workspaces. When someone gives you access, they compare this fingerprint with you outside clioilc;
+        when you give access, compare theirs. The CLI shows the same with <code>clioilc team</code>.
+      </p>
+      {#if !vault.dataKey}
+        <Unlock title="Unlock to see your fingerprint" />
+      {:else if team.fingerprint}
+        <p class="small">Your fingerprint:</p>
+        <code class="fp">{showFingerprint(team.fingerprint)}</code>
+      {:else if identityError}
+        <p class="error small">{identityError}</p>
+      {:else}
+        <p class="muted small">Loading…</p>
+      {/if}
+    </section>
+  {/if}
 
   <section class="card">
     <h2>Export your data</h2>
@@ -109,4 +142,5 @@
   .row { display: flex; flex-wrap: wrap; gap: 8px; }
   .btn.danger { background: var(--critical); border-color: transparent; color: #fff; }
   .btn.danger:disabled { opacity: 0.5; }
+  .fp { display: block; font-size: 13px; letter-spacing: 0.03em; overflow-wrap: anywhere; margin-bottom: 4px; }
 </style>

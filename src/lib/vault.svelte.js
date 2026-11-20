@@ -29,3 +29,6 @@ export async function unlockVault(passphrase) {
 export function lockVault() {
   vault.dataKey = null;
 }
+
+/** Thrown when end-to-end data needs the passphrase and no key is unlocked. */
+export class LockedError extends Error {}

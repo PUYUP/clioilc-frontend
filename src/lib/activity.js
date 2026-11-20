@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { decryptRecord } from "./e2e.js";
 import { timeZone } from "./format.js";
 import { withScope } from "./scope.svelte.js";
+import { openTeamActivity } from "./team.svelte.js";
 
 /**
  * @typedef {"prompt" | "text" | "thinking" | "tool" | "unreadable"} Kind
@@ -18,8 +19,9 @@ import { withScope } from "./scope.svelte.js";
  * @typedef {{ key: string, projectId: string | null, sessionId: string | null, user?: string, items: Item[], costUsd: number }} Group
  */
 
-/** Thrown when the account is end-to-end encrypted and no key is unlocked. */
-export class LockedError extends Error {}
+import { LockedError } from "./vault.svelte.js";
+
+export { LockedError };
 
 /**
  * @param {string} date  YYYY-MM-DD in the browser's time zone
@@ -29,6 +31,12 @@ export class LockedError extends Error {}
 export async function loadActivity(date, dataKey, signal) {
   const params = withScope(new URLSearchParams({ date, tz: timeZone }));
   const res = await api(`/api/v1/usage/activity/?${params}`, { signal });
+  if (res.workspace && res.enc_mode === "e2e") {
+    // E2E team workspace: names and records are sealed with team keys.
+    if (!dataKey) throw new LockedError();
+    const { rows, notes } = await openTeamActivity(res);
+    return { ...build(res.messages, res.tool_calls, rows), team: true, notes };
+  }
   if (res.enc_mode === "e2e" && !dataKey && res.private.length) throw new LockedError();
 
   const privateRows = await Promise.all(
@@ -41,7 +49,7 @@ export async function loadActivity(date, dataKey, signal) {
       }
     }),
   );
-  return { ...build(res.messages, res.tool_calls, privateRows), team: !!res.workspace };
+  return { ...build(res.messages, res.tool_calls, privateRows), team: !!res.workspace, notes: /** @type {string[]} */ ([]) };
 }
 
 /** @param {any[]} messages @param {any[]} toolCalls @param {any[]} privateRows */
@@ -170,6 +178,13 @@ export function shortProject(name) {
  */
 export async function loadProjectNames(dataKey, signal) {
   const res = await api(`/api/v1/usage/projects/?${withScope(new URLSearchParams())}`, { signal });
+  if (res.enc_mode === "e2e" && res.projects.some((/** @type {any} */ p) => "name_ct" in p)) {
+    // E2E team workspace: project names are sealed with the project keys.
+    if (!dataKey) return { names: new Map(), locked: true };
+    const ws = new URLSearchParams(withScope(new URLSearchParams())).get("workspace") ?? "";
+    const { rows } = await openTeamActivity({ workspace: ws, private: res.projects, team_records: [] });
+    return { names: new Map(rows.map((r) => [r.id, r.data.name])), locked: false };
+  }
   /** @type {Map<string, string>} */
   const names = new Map();
   let locked = false;

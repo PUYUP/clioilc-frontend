@@ -10,10 +10,14 @@
   import Login from "$lib/Login.svelte";
   import { refreshWorkspaces, setScope } from "$lib/scope.svelte.js";
   import { session } from "$lib/session.svelte.js";
+  import { normalizeRemote } from "$lib/git.js";
+  import { VerifyFirstError, decryptNames, installKey, loadKeys, projectLabel, sealCurrent, team, wsLabel } from "$lib/team.svelte.js";
+  import { vault } from "$lib/vault.svelte.js";
+  import Encryption from "./Encryption.svelte";
 
   /**
-   * @typedef {{ slug: string, name: string, role: string | null, can: { manage_projects: boolean, manage_members: boolean, delete: boolean, transfer: boolean } }} Workspace
-   * @typedef {{ slug: string, name: string, git_remote: string, role: string | null, sources: number, can: { link: boolean, manage_access: boolean, manage: boolean } }} Project
+   * @typedef {{ id: number, slug: string, name: string, enc_mode: string, name_ct: string | null, key_version: number, rotation_needed: boolean, role: string | null, can: { manage_projects: boolean, manage_members: boolean, delete: boolean, transfer: boolean } }} Workspace
+   * @typedef {{ id: number, slug: string, name: string, git_remote: string, name_ct: string | null, remote_ct: string | null, key_version: number, rotation_needed: boolean, role: string | null, sources: number, can: { link: boolean, manage_access: boolean, manage: boolean } }} Project
    * @typedef {{ id: number, username: string, avatar_url: string | null, role: string }} Member
    * @typedef {{ id: number, project: { slug: string, name: string } | null, role: string, github_login: string, invited_by: string | null, expires_at: string, url?: string, emailed?: boolean }} Invite
    */
@@ -59,6 +63,24 @@
   let removing = $state(/** @type {string | null} */ (null));
 
   const me = $derived(session.user?.username);
+  const e2e = $derived(ws?.enc_mode === "e2e");
+  /** @param {Project} p */
+  const pname = (p) => projectLabel(p, e2e);
+  /** @param {Project} p */
+  const premote = (p) => (e2e ? (team.names[`remote:${p.id}`] ?? "") : p.git_remote);
+
+  // E2E: open names once the passphrase is unlocked (and after each reload).
+  $effect(() => {
+    if (!e2e || !vault.dataKey || !ws) return;
+    const w = ws;
+    const ps = projects;
+    loadKeys(slug)
+      .then(() => decryptNames(w, ps))
+      .then(() => {
+        if (!rename) rename = wsLabel(w);
+      })
+      .catch(() => {});
+  });
   const canInviteSomewhere = $derived(!!ws?.can.manage_members || projects.some((p) => p.can.manage_access));
   const inviteTargets = $derived(
     ws?.can.manage_members ? projects : projects.filter((p) => p.can.manage_access),
@@ -91,7 +113,7 @@
       return;
     }
     const w = /** @type {Workspace} */ (ws);
-    rename = w.name;
+    rename = w.enc_mode === "e2e" ? (team.names[`ws:${w.id}`] ?? "") : w.name;
     const [p, m, inv] = await Promise.all([
       api(`/api/v1/workspaces/${s}/projects/`, { signal }),
       w.role ? api(`/api/v1/workspaces/${s}/members/`, { signal }) : Promise.resolve(null),
@@ -121,10 +143,19 @@
           slug_taken: "That URL name is taken.",
           already_member: "That person already has access.",
           forbidden: "Your role does not allow this.",
+          e2e_account_required: "End-to-end workspaces accept end-to-end accounts only.",
+          grants_incomplete: "Someone's access changed meanwhile; reload and try again.",
+          stale_version: "The keys changed meanwhile; reload and try again.",
         };
-      error =
-        messages[String(code ?? "")] ??
-        (e instanceof ApiError && e.status === 400 ? Object.values(e.body ?? {}).flat().join(" ") || failure : failure);
+      if (e instanceof VerifyFirstError) {
+        error = `Verify ${e.people.map((p) => `@${p.username}`).join(", ")} in the Encryption section first.`;
+      } else if (!(e instanceof ApiError) && e instanceof Error) {
+        error = e.message;
+      } else {
+        error =
+          messages[String(code ?? "")] ??
+          (e instanceof ApiError && e.status === 400 ? Object.values(e.body ?? {}).flat().join(" ") || failure : failure);
+      }
     } finally {
       busy = false;
     }
@@ -141,20 +172,44 @@
   /** @param {Project} p */
   const saveRemote = (p) =>
     run(async () => {
-      const updated = await api(`/api/v1/workspaces/${slug}/projects/${p.slug}/`, {
-        method: "PATCH",
-        body: { git_remote: remoteDraft },
-      });
-      projects = projects.map((x) => (x.slug === p.slug ? { ...x, git_remote: updated.git_remote } : x));
+      if (e2e) {
+        // The server cannot read (or normalize) it: normalize here, then seal.
+        const remote = remoteDraft.trim() ? normalizeRemote(remoteDraft) : "";
+        if (remote === null) throw new Error("Not a git remote URL, e.g. git@github.com:acme/api.git");
+        const remote_ct = remote ? await sealCurrent("project-remote", p.id, p.key_version, remote) : null;
+        const updated = await api(`/api/v1/workspaces/${slug}/projects/${p.slug}/`, { method: "PATCH", body: { remote_ct } });
+        projects = projects.map((x) => (x.slug === p.slug ? updated : x));
+        team.names = { ...team.names, [`remote:${p.id}`]: remote };
+      } else {
+        const updated = await api(`/api/v1/workspaces/${slug}/projects/${p.slug}/`, {
+          method: "PATCH",
+          body: { git_remote: remoteDraft },
+        });
+        projects = projects.map((x) => (x.slug === p.slug ? { ...x, git_remote: updated.git_remote } : x));
+      }
       editingRemote = null;
     }, "Failed to save the git remote.");
 
   const createProject = () =>
     run(async () => {
-      const p = await api(`/api/v1/workspaces/${slug}/projects/`, {
-        method: "POST",
-        body: { name: projectName, slug: projectSlug || toSlug(projectName), git_remote: projectRemote },
-      });
+      let p;
+      if (e2e) {
+        // Two steps: create without name, then install key v1 with name and remote sealed.
+        const remote = projectRemote.trim() ? normalizeRemote(projectRemote) : null;
+        if (projectRemote.trim() && remote === null) throw new Error("Not a git remote URL, e.g. git@github.com:acme/api.git");
+        p = await api(`/api/v1/workspaces/${slug}/projects/`, { method: "POST", body: { slug: projectSlug || toSlug(projectName) } });
+        try {
+          await installKey(slug, "project", p.id, { name: projectName, remote });
+        } finally {
+          p = await api(`/api/v1/workspaces/${slug}/projects/${p.slug}/`);
+        }
+        await decryptNames(/** @type {Workspace} */ (ws), [p]);
+      } else {
+        p = await api(`/api/v1/workspaces/${slug}/projects/`, {
+          method: "POST",
+          body: { name: projectName, slug: projectSlug || toSlug(projectName), git_remote: projectRemote },
+        });
+      }
       projects = [...projects, p].sort((a, b) => a.slug.localeCompare(b.slug));
       shareText[p.slug] = false;
       projectName = projectSlug = projectRemote = "";
@@ -240,7 +295,13 @@
 
   const saveName = () =>
     run(async () => {
-      ws = await api(`/api/v1/workspaces/${slug}/`, { method: "PATCH", body: { name: rename } });
+      if (e2e && ws) {
+        const name_ct = await sealCurrent("ws-name", ws.id, ws.key_version, rename);
+        ws = await api(`/api/v1/workspaces/${slug}/`, { method: "PATCH", body: { name_ct } });
+        team.names = { ...team.names, [`ws:${ws?.id}`]: rename };
+      } else {
+        ws = await api(`/api/v1/workspaces/${slug}/`, { method: "PATCH", body: { name: rename } });
+      }
       await refreshWorkspaces();
     }, "Failed to rename.");
 
@@ -283,13 +344,17 @@
   <div class="head">
     <div>
       <p class="muted small crumb"><a href="/workspaces">Workspaces</a> /</p>
-      <h1>{ws.name}</h1>
+      <h1>{wsLabel(ws)}{#if e2e}<span class="badge" title="End-to-end encrypted">E2E</span>{/if}</h1>
       <p class="muted small">{ws.slug} · you are {ws.role ? `${ws.role}` : "a project collaborator"}</p>
     </div>
     <button class="btn primary" onclick={() => (setScope(ws?.slug ?? null), goto("/"))}>View team usage</button>
   </div>
 
   {#if error}<div class="card"><p class="error" role="alert">{error}</p></div>{/if}
+
+  {#if e2e}
+    <Encryption {slug} ws={ws} {projects} onchange={() => load(slug)} />
+  {/if}
 
   <section class="card">
     <h2>Projects</h2>
@@ -301,18 +366,18 @@
           <li class="project">
             <div class="row">
               <div class="grow">
-                <strong>{p.name}</strong>
+                <strong>{pname(p)}</strong>
                 <span class="muted small">
                   {p.slug} · {p.sources === 1 ? "1 linked folder" : `${p.sources} linked folders`}{p.role ? ` · you: ${p.role}` : ""}
                 </span>
-                {#if p.git_remote}<span class="muted small remote">git: {p.git_remote}</span>{/if}
+                {#if premote(p)}<span class="muted small remote">git: {premote(p)}</span>{/if}
               </div>
               <div class="actions">
                 {#if p.can.manage_access}
                   <button class="btn" onclick={() => toggleCollaborators(p)}>{collaborators[p.slug] ? "Hide collaborators" : "Collaborators"}</button>
                 {/if}
                 {#if p.can.manage && editingRemote !== p.slug}
-                  <button class="btn" onclick={() => ((editingRemote = p.slug), (remoteDraft = p.git_remote))}>Git remote…</button>
+                  <button class="btn" onclick={() => ((editingRemote = p.slug), (remoteDraft = premote(p)))}>Git remote…</button>
                 {/if}
                 {#if p.can.manage && removing !== `p:${p.slug}`}
                   <button class="btn" onclick={() => (removing = `p:${p.slug}`)}>Delete…</button>
@@ -332,7 +397,7 @@
                   placeholder="git@github.com:acme/api.git"
                   maxlength="300"
                   bind:value={remoteDraft}
-                  aria-label={`Git remote of ${p.name}`}
+                  aria-label={`Git remote of ${pname(p)}`}
                   spellcheck="false"
                 />
                 <button class="btn" type="submit" disabled={busy}>Save</button>
@@ -342,7 +407,7 @@
             {/if}
             {#if removing === `p:${p.slug}`}
               <div class="confirm">
-                <p class="small">Delete <strong>{p.name}</strong>? Links and collaborator access are removed. Members' own data is not deleted.</p>
+                <p class="small">Delete <strong>{pname(p)}</strong>? Links and collaborator access are removed. Members' own data is not deleted.</p>
                 <div class="actions">
                   <button class="btn danger" disabled={busy} onclick={() => deleteProject(p)}>Delete project</button>
                   <button class="btn" disabled={busy} onclick={() => (removing = null)}>Cancel</button>
@@ -486,7 +551,7 @@
         />
         <select class="input" bind:value={inviteTarget} aria-label="Invite to">
           {#if ws.can.manage_members}<option value="">Whole workspace</option>{/if}
-          {#each inviteTargets as p (p.slug)}<option value={p.slug}>Only {p.name}</option>{/each}
+          {#each inviteTargets as p (p.slug)}<option value={p.slug}>Only {pname(p)}</option>{/each}
         </select>
         <select class="input" bind:value={inviteRole} aria-label="Role">
           {#each roleChoices as r (r)}<option value={r}>{r}</option>{/each}
@@ -556,7 +621,7 @@
         }}
       >
         <input class="input" maxlength="100" bind:value={rename} required aria-label="Workspace name" />
-        <button class="btn" type="submit" disabled={busy || !rename || rename === ws.name}>Rename</button>
+        <button class="btn" type="submit" disabled={busy || !rename || rename === wsLabel(ws)}>Rename</button>
       </form>
       {#if ws.can.delete}
         <div class="danger-zone">
@@ -621,4 +686,5 @@
   .audit time { color: var(--text-muted); white-space: nowrap; }
   .audit span { overflow-wrap: anywhere; }
   .more { margin-top: 10px; }
+  .badge { font-size: 11px; margin-left: 8px; padding: 1px 6px; border-radius: 6px; background: var(--ghost); color: var(--text-secondary); vertical-align: middle; font-weight: 500; }
 </style>

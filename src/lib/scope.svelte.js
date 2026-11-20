@@ -6,7 +6,7 @@ import { api } from "./api.js";
 const KEY = "clioilc.scope";
 
 /**
- * @typedef {{ slug: string, name: string, role: string | null,
+ * @typedef {{ id: number, slug: string, name: string, enc_mode: string, name_ct: string | null, key_version: number, rotation_needed: boolean, role: string | null,
  *   can: { manage_projects: boolean, manage_members: boolean, delete: boolean, transfer: boolean } }} Workspace
  */
 
