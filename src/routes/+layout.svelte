@@ -16,6 +16,7 @@
         <nav>
           <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Overview</a>
           <a href="/activity" aria-current={page.url.pathname.startsWith("/activity") ? "page" : undefined}>Activity</a>
+          <a href="/devices" aria-current={page.url.pathname.startsWith("/devices") ? "page" : undefined}>Devices</a>
         </nav>
       {/if}
     </div>
@@ -49,9 +50,24 @@
   nav a:hover { background: var(--ghost); }
   nav a[aria-current="page"] { color: var(--text-primary); font-weight: 600; background: var(--ghost); }
   .user { display: flex; align-items: center; gap: 12px; }
+  .user .btn { white-space: nowrap; }
   @media (max-width: 520px) {
+    /* Two rows: brand + sign out, then the nav. */
+    .bar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "brand user" "nav nav";
+      height: auto;
+      padding-top: 8px;
+      padding-bottom: 6px;
+      row-gap: 4px;
+    }
+    .left { display: contents; }
+    .brand { grid-area: brand; align-self: center; }
+    nav { grid-area: nav; margin-left: -8px; }
+    .user { grid-area: user; }
     .username { display: none; }
-    .left { gap: 8px; }
+    .user .btn { padding: 6px 10px; font-size: 13px; }
   }
   main.wrap { padding-top: 24px; padding-bottom: 48px; }
 </style>

@@ -20,7 +20,6 @@
   let error = $state(/** @type {string | null} */ (null));
 
   let project = $state("");
-  let showThinking = $state(false);
   let query = $state("");
   let passphrase = $state("");
   /** @type {Set<string>} */
@@ -51,11 +50,15 @@
 
   // Type and status filters live in the URL (?type=prompt,tool&status=error),
   // so links such as the calendar's error cells can open a filtered view.
+  // Thinking is off by default (it is long and plentiful); turning only it
+  // on reads the agent's reasoning on its own.
   const TYPES = /** @type {const} */ ([
     { key: "prompt", label: "You" },
     { key: "agent", label: "Agent" },
+    { key: "thinking", label: "Thinking" },
     { key: "tool", label: "Tool" },
   ]);
+  const DEFAULT_TYPES = ["prompt", "agent", "tool"];
   const STATUSES = /** @type {const} */ ([
     { key: "all", label: "All" },
     { key: "ok", label: "Succeeded" },
@@ -66,7 +69,7 @@
   const types = $derived.by(() => {
     const raw = page.url.searchParams.get("type");
     const picked = (raw ?? "").split(",").filter((t) => TYPES.some((x) => x.key === t));
-    return new Set(/** @type {TypeKey[]} */ (picked.length ? picked : TYPES.map((t) => t.key)));
+    return new Set(/** @type {TypeKey[]} */ (picked.length ? picked : DEFAULT_TYPES));
   });
   const status = $derived(
     /** @type {"all" | "ok" | "error"} */ (
@@ -76,7 +79,7 @@
 
   /** @param {Item} i @returns {TypeKey | null} */
   const typeOf = (i) =>
-    i.kind === "prompt" ? "prompt" : i.kind === "text" || i.kind === "thinking" ? "agent" : i.kind === "tool" ? "tool" : null;
+    i.kind === "prompt" ? "prompt" : i.kind === "text" ? "agent" : i.kind === "thinking" ? "thinking" : i.kind === "tool" ? "tool" : null;
 
   /** @param {Record<string, string | null>} changes */
   function setParams(changes) {
@@ -95,7 +98,9 @@
       if (next.size === 1) return; // keep at least one type
       next.delete(key);
     } else next.add(key);
-    setParams({ type: next.size === TYPES.length ? null : [...next].join(",") });
+    const isDefault = next.size === DEFAULT_TYPES.length && DEFAULT_TYPES.every((t) => next.has(/** @type {TypeKey} */ (t)));
+    // Keep URL order stable (TYPES order), and omit it for the default.
+    setParams({ type: isDefault ? null : TYPES.map((t) => t.key).filter((k) => next.has(k)).join(",") });
   }
 
   const visible = $derived.by(() => {
@@ -103,10 +108,10 @@
     const q = query.trim().toLowerCase();
     return data.items.filter((i) => {
       const t = typeOf(i);
-      if (t ? !types.has(t) : types.size !== TYPES.length) return false;
+      // Unreadable (locked) entries show whenever prompts or replies do.
+      if (t ? !types.has(t) : !(types.has("prompt") || types.has("agent"))) return false;
       if (status !== "all" && i.status !== status) return false;
       return (
-        (showThinking || i.kind !== "thinking") &&
         (!project || i.projectId === project) &&
         (!q || i.text.toLowerCase().includes(q) || (i.tool?.name.toLowerCase().includes(q) ?? false))
       );
@@ -126,13 +131,12 @@
         }))
       : [],
   );
-  // Counts per button. Thinking only counts when shown; each filter group
-  // counts within the other group's current selection.
+  // Counts per button: each filter group counts within the other group's
+  // current selection.
   const counts = $derived.by(() => {
     /** @type {Record<string, number>} */
-    const c = { prompt: 0, agent: 0, tool: 0, all: 0, ok: 0, error: 0 };
+    const c = { prompt: 0, agent: 0, thinking: 0, tool: 0, all: 0, ok: 0, error: 0 };
     for (const i of data?.items ?? []) {
-      if (i.kind === "thinking" && !showThinking) continue;
       const t = typeOf(i);
       if (t && (status === "all" || i.status === status)) c[t]++;
       if (!t || types.has(t)) {
@@ -215,7 +219,6 @@
         {#each projectOptions as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
       </select>
       <input type="search" bind:value={query} placeholder="Search text or tool…" aria-label="Search" />
-      <label class="check"><input type="checkbox" bind:checked={showThinking} /> Show thinking</label>
     </div>
     <div class="filters">
       <div class="seg" role="group" aria-label="Type">
@@ -351,7 +354,6 @@
   .filters input[type="search"] { flex: 1 1 200px; }
   .filters select { max-width: 100%; }
   .order { margin-left: auto; padding: 6px 12px; font-size: 14px; }
-  .check { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
   .seg button { border: 0; background: none; padding: 6px 12px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
   .seg button + button { border-left: 1px solid var(--border); }

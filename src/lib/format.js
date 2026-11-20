@@ -36,6 +36,17 @@ export function count(n, word, many = `${word}s`) {
   return `${full(n)} ${n === 1 ? word : many}`;
 }
 
+/** "5 minutes ago", "yesterday". @param {Date} d @param {Date} [now] */
+export function ago(d, now = new Date()) {
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const secs = Math.round((d.getTime() - now.getTime()) / 1000);
+  const units = /** @type {const} */ ([
+    ["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60],
+  ]);
+  for (const [unit, size] of units) if (Math.abs(secs) >= size) return rtf.format(Math.round(secs / size), unit);
+  return "just now";
+}
+
 /** The browser's IANA time zone, sent to the API so days match the user's. */
 export const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
