@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { decryptRecord } from "./e2e.js";
 import { timeZone } from "./format.js";
+import { withScope } from "./scope.svelte.js";
 
 /**
  * @typedef {"prompt" | "text" | "thinking" | "tool" | "unreadable"} Kind
@@ -11,9 +12,10 @@ import { timeZone } from "./format.js";
  *   projectId: string | null, sessionId: string | null, isSubagent: boolean,
  *   status: "ok" | "error" | null, errorKind?: string,
  *   messageId?: string, model?: string, costUsd?: number | null,
+ *   user?: string,
  *   tool?: { name: string, status: string | null, error: string | null },
  * }} Item
- * @typedef {{ key: string, projectId: string | null, sessionId: string | null, items: Item[], costUsd: number }} Group
+ * @typedef {{ key: string, projectId: string | null, sessionId: string | null, user?: string, items: Item[], costUsd: number }} Group
  */
 
 /** Thrown when the account is end-to-end encrypted and no key is unlocked. */
@@ -25,7 +27,7 @@ export class LockedError extends Error {}
  * @param {AbortSignal} [signal]
  */
 export async function loadActivity(date, dataKey, signal) {
-  const params = new URLSearchParams({ date, tz: timeZone });
+  const params = withScope(new URLSearchParams({ date, tz: timeZone }));
   const res = await api(`/api/v1/usage/activity/?${params}`, { signal });
   if (res.enc_mode === "e2e" && !dataKey && res.private.length) throw new LockedError();
 
@@ -39,7 +41,7 @@ export async function loadActivity(date, dataKey, signal) {
       }
     }),
   );
-  return build(res.messages, res.tool_calls, privateRows);
+  return { ...build(res.messages, res.tool_calls, privateRows), team: !!res.workspace };
 }
 
 /** @param {any[]} messages @param {any[]} toolCalls @param {any[]} privateRows */
@@ -56,14 +58,14 @@ function build(messages, toolCalls, privateRows) {
     if (p.kind === "project" || !p.ts) continue;
     const ts = new Date(p.ts);
     if (p.error) {
-      items.push({ id: p.id, ts, kind: "unreadable", text: "", projectId: null, sessionId: null, isSubagent: false, status: null });
+      items.push({ id: p.id, ts, kind: "unreadable", text: "", projectId: null, sessionId: null, isSubagent: false, status: null, user: p.user });
       continue;
     }
     const d = p.data;
     if (p.kind === "prompt") {
       items.push({
         id: p.id, ts, kind: "prompt", text: d.text.trim(),
-        projectId: d.project_id, sessionId: d.session_id, isSubagent: d.is_subagent, status: null,
+        projectId: d.project_id, sessionId: d.session_id, isSubagent: d.is_subagent, status: null, user: p.user,
       });
     } else if (p.kind === "block") {
       const m = msgById.get(d.message_id);
@@ -74,6 +76,7 @@ function build(messages, toolCalls, privateRows) {
         // A reply's status is its API message's: "ok" or an error kind.
         status: m ? (m.status === "ok" ? "ok" : "error") : null,
         errorKind: m && m.status !== "ok" ? m.status : undefined,
+        user: p.user,
       });
     } else if (p.kind === "tool_call") {
       const t = toolById.get(p.id);
@@ -84,6 +87,7 @@ function build(messages, toolCalls, privateRows) {
         messageId: t?.message_id ?? undefined, model: m?.model, costUsd: m?.cost_usd ?? null,
         status: t?.status === "ok" || t?.status === "error" ? t.status : null,
         tool: { name: d.full_name ?? t?.name ?? "tool", status: t?.status ?? null, error: d.error ?? null },
+        user: p.user,
       });
     }
   }
@@ -104,8 +108,8 @@ export function groupBySession(items, messages) {
   let counted = new Set();
   for (const item of items) {
     let g = groups[groups.length - 1];
-    if (!g || g.projectId !== item.projectId || g.sessionId !== item.sessionId) {
-      g = { key: `${item.id}`, projectId: item.projectId, sessionId: item.sessionId, items: [], costUsd: 0 };
+    if (!g || g.projectId !== item.projectId || g.sessionId !== item.sessionId || g.user !== item.user) {
+      g = { key: `${item.id}`, projectId: item.projectId, sessionId: item.sessionId, user: item.user, items: [], costUsd: 0 };
       groups.push(g);
       counted = new Set();
     }
@@ -165,7 +169,7 @@ export function shortProject(name) {
  * @param {Uint8Array<ArrayBuffer> | null} dataKey @param {AbortSignal} [signal]
  */
 export async function loadProjectNames(dataKey, signal) {
-  const res = await api("/api/v1/usage/projects/", { signal });
+  const res = await api(`/api/v1/usage/projects/?${withScope(new URLSearchParams())}`, { signal });
   /** @type {Map<string, string>} */
   const names = new Map();
   let locked = false;

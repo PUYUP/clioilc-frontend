@@ -2,16 +2,44 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { page } from "$app/state";
+  import { goto } from "$app/navigation";
   import { session, refreshSession, logout } from "$lib/session.svelte.js";
+  import { scope, refreshWorkspaces, setScope } from "$lib/scope.svelte.js";
 
   let { children } = $props();
   onMount(refreshSession);
+
+  $effect(() => {
+    if (session.user) refreshWorkspaces();
+  });
+
+  /** @param {Event & { currentTarget: HTMLSelectElement }} e */
+  function pickScope(e) {
+    const value = e.currentTarget.value;
+    if (value === "__manage") {
+      e.currentTarget.value = scope.workspace ?? "";
+      goto("/workspaces");
+      return;
+    }
+    setScope(value || null);
+  }
 </script>
 
 <header>
   <div class="wrap bar">
     <div class="left">
-      <a class="brand" href="/">clioilc</a>
+      <div class="brand-row">
+        <a class="brand" href="/">clioilc</a>
+        {#if session.user && scope.loaded}
+          <select class="scope" aria-label="Show data of" value={scope.workspace ?? ""} onchange={pickScope}>
+            <option value="">Personal</option>
+            {#each scope.workspaces as w (w.slug)}
+              <option value={w.slug}>{w.name}</option>
+            {/each}
+            <option value="__manage">{scope.workspaces.length ? "Manage workspaces…" : "Create a workspace…"}</option>
+          </select>
+        {/if}
+      </div>
       {#if session.user}
         <nav>
           <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Overview</a>
@@ -45,6 +73,8 @@
   header { border-bottom: 1px solid var(--border); background: var(--surface); }
   .bar { display: flex; align-items: center; justify-content: space-between; height: 56px; }
   .brand { font-weight: 650; text-decoration: none; letter-spacing: -0.01em; }
+  .brand-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .scope { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); max-width: 160px; text-overflow: ellipsis; }
   .left { display: flex; align-items: center; gap: 20px; min-width: 0; }
   nav { display: flex; gap: 4px; }
   nav a { text-decoration: none; color: var(--text-secondary); padding: 6px 10px; border-radius: 8px; font-size: 14px; }
@@ -55,18 +85,21 @@
   .username { color: var(--text-secondary); text-decoration: none; font-size: 14px; padding: 6px 8px; border-radius: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .username:hover, .username[aria-current="page"] { background: var(--ghost); color: var(--text-primary); }
   @media (max-width: 520px) {
-    /* Two rows: brand + sign out, then the nav. */
+    /* Three rows: brand + sign out, the scope picker, then the nav. */
     .bar {
       display: grid;
       grid-template-columns: 1fr auto;
-      grid-template-areas: "brand user" "nav nav";
+      grid-template-areas: "brand user" "scope scope" "nav nav";
       height: auto;
       padding-top: 8px;
       padding-bottom: 6px;
       row-gap: 4px;
     }
     .left { display: contents; }
+    /* The row's children join the grid: brand and the scope picker get their own cells. */
+    .brand-row { display: contents; }
     .brand { grid-area: brand; align-self: center; }
+    .scope { grid-area: scope; max-width: none; width: 100%; }
     nav { grid-area: nav; margin-left: -8px; }
     .user { grid-area: user; }
     .username { max-width: 40vw; }

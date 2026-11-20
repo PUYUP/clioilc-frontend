@@ -1,4 +1,5 @@
 // Usage series for the dashboard, from GET /api/v1/usage/report/.
+import { withScope } from "./scope.svelte.js";
 import { api } from "./api.js";
 import { isoDate, timeZone } from "./format.js";
 
@@ -90,18 +91,18 @@ export function windowOf(range, unit) {
 
 /** Report query for [from, to): whole days plus an exact `since`. @param {string} by @param {Date} from @param {Date} to */
 function reportParams(by, from, to) {
-  return new URLSearchParams({
+  return withScope(new URLSearchParams({
     by,
     start: isoDate(from),
     end: isoDate(new Date(to.getTime() - 1)),
     since: from.toISOString(),
     tz: timeZone,
-  });
+  }));
 }
 
 /**
  * Totals per project or model over a range, largest `metric` first.
- * @param {"project" | "model"} by @param {typeof RANGES[number]} range
+ * @param {"project" | "model" | "member"} by @param {typeof RANGES[number]} range
  * @param {"hour" | "day"} unit @param {AbortSignal} [signal]
  * @returns {Promise<({ key: string } & Record<MetricKey, number>)[]>}
  */
@@ -148,7 +149,7 @@ export async function loadCalendar(signal) {
   const today = startOfDay(new Date());
   const monday = addDays(today, -((today.getDay() + 6) % 7));
   const start = addDays(monday, -52 * 7);
-  const params = new URLSearchParams({ by: "day", start: isoDate(start), end: isoDate(today), tz: timeZone });
+  const params = withScope(new URLSearchParams({ by: "day", start: isoDate(start), end: isoDate(today), tz: timeZone }));
   const report = await api(`/api/v1/usage/report/?${params}`, { signal });
   const byDay = new Map(report.rows.map((/** @type {any} */ r) => [r.key, r]));
   const days = [];

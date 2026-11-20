@@ -6,6 +6,7 @@
   import { isoDate, timeZone, usd } from "$lib/format.js";
   import { renderMarkdown } from "$lib/markdown.js";
   import Login from "$lib/Login.svelte";
+  import { current } from "$lib/scope.svelte.js";
   import { session } from "$lib/session.svelte.js";
   import { unlockVault, vault } from "$lib/vault.svelte.js";
 
@@ -22,6 +23,13 @@
   // Initial project from ?project= (links from the Digest page).
   let project = $state(page.url.searchParams.get("project") ?? "");
   let query = $state("");
+  // Team scope: one member's entries only ("" = everyone).
+  let member = $state("");
+  const team = $derived(!!data?.team);
+  const me = $derived(session.user?.username);
+  const memberOptions = $derived(
+    team ? [...new Set((data?.items ?? []).map((i) => i.user).filter((u) => !!u))].sort() : [],
+  );
   let passphrase = $state("");
   /** @type {Set<string>} */
   let expanded = $state(new Set());
@@ -114,6 +122,7 @@
       if (status !== "all" && i.status !== status) return false;
       return (
         (!project || i.projectId === project) &&
+        (!member || i.user === member) &&
         (!q || i.text.toLowerCase().includes(q) || (i.tool?.name.toLowerCase().includes(q) ?? false))
       );
     });
@@ -220,13 +229,25 @@
         <option value="">All projects</option>
         {#each projectOptions as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
       </select>
+      {#if team}
+        <select bind:value={member} aria-label="Member">
+          <option value="">All members</option>
+          {#each memberOptions as u (u)}<option value={u}>@{u}{u === me ? " (you)" : ""}</option>{/each}
+        </select>
+      {/if}
       <input type="search" bind:value={query} placeholder="Search text or tool…" aria-label="Search" />
     </div>
+    {#if team}
+      <p class="muted small team-note">
+        Team view of <strong>{current()?.name ?? "this workspace"}</strong>: usage and tool actions from linked folders.
+        Teammates' prompts and replies appear only if they share them.
+      </p>
+    {/if}
     <div class="filters">
       <div class="seg" role="group" aria-label="Type">
         {#each TYPES as t (t.key)}
           <button aria-pressed={types.has(t.key)} onclick={() => toggleType(t.key)}>
-            {t.label} <span class="n">{counts[t.key]}</span>
+            {t.key === "prompt" && team ? "Prompts" : t.label} <span class="n">{counts[t.key]}</span>
           </button>
         {/each}
       </div>
@@ -269,6 +290,7 @@
       {#each groups as g (g.key)}
         <section class="card group">
           <header>
+            {#if g.user}<span class="who">@{g.user}</span>{/if}
             <strong title={data.projects.get(g.projectId ?? "") ?? ""}>
               {g.projectId === null ? "Continued from another day" : labelProject(data.projects.get(g.projectId))}
             </strong>
@@ -282,7 +304,7 @@
             {#each g.items as item (item.id)}
               <li class="item {item.kind}">
                 <time datetime={item.ts.toISOString()}>{time(item.ts)}</time>
-                <span class="tag">{LABEL[item.kind]}{#if item.isSubagent}<span class="sub">subagent</span>{/if}</span>
+                <span class="tag">{item.kind === "prompt" && item.user && item.user !== me ? "Prompt" : LABEL[item.kind]}{#if item.isSubagent}<span class="sub">subagent</span>{/if}</span>
                 <div class="body">
                   {#if item.kind === "tool" && item.tool}
                     <div class="toolline">
@@ -440,4 +462,6 @@
     .item { grid-template-columns: 56px minmax(0, 1fr); }
     .item .body { grid-column: 1 / -1; }
   }
+  .team-note { margin: -4px 0 12px; }
+  .who { font-size: 13px; color: var(--text-secondary); margin-right: 6px; }
 </style>

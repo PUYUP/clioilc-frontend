@@ -7,6 +7,7 @@
   import { compact, count, full, isoDate, longLabel, timeZone, usd, usdCompact } from "$lib/format.js";
   import { loadProjectNames, projectLabeler } from "$lib/activity.js";
   import RankedBars from "$lib/RankedBars.svelte";
+  import { current, scope } from "$lib/scope.svelte.js";
   import { session } from "$lib/session.svelte.js";
   import { vault } from "$lib/vault.svelte.js";
   import { METRICS, RANGES, loadBreakdown, loadCalendar, loadSeries, totals } from "$lib/usage.js";
@@ -35,6 +36,7 @@
   // same window as the chart.
   let byProject = $state(/** @type {Awaited<ReturnType<typeof loadBreakdown>> | null} */ (null));
   let byModel = $state(/** @type {Awaited<ReturnType<typeof loadBreakdown>> | null} */ (null));
+  let byMember = $state(/** @type {Awaited<ReturnType<typeof loadBreakdown>> | null} */ (null));
   let names = $state(/** @type {Map<string, string>} */ (new Map()));
   let namesLocked = $state(false);
   let breakdownLoading = $state(false);
@@ -45,10 +47,16 @@
     const r = range;
     const u = unit === "hour" && !hourAllowed ? "day" : unit;
     breakdownLoading = true;
-    Promise.all([loadBreakdown("project", r, u, controller.signal), loadBreakdown("model", r, u, controller.signal)])
-      .then(([p, m]) => {
+    const team = !!scope.workspace;
+    Promise.all([
+      loadBreakdown("project", r, u, controller.signal),
+      loadBreakdown("model", r, u, controller.signal),
+      team ? loadBreakdown("member", r, u, controller.signal) : Promise.resolve(null),
+    ])
+      .then(([p, m, mb]) => {
         byProject = p;
         byModel = m;
+        byMember = mb;
       })
       .catch(() => {})
       .finally(() => {
@@ -82,6 +90,8 @@
     }),
   );
   const modelRows = $derived((byModel ?? []).map((r) => ({ key: r.key, label: r.key, value: r[metric] })));
+  const memberRows = $derived((byMember ?? []).map((r) => ({ key: r.key, label: `@${r.key}`, value: r[metric] })));
+  const team = $derived(current());
   const metricFormat = $derived(metricDef.format === "usd" ? usd : full);
   const sum = $derived(points ? totals(points) : null);
   const buckets = $derived((points ?? []).map((p) => ({ t: p.t, value: p[metric] })));
@@ -128,6 +138,12 @@
 {#if !session.user}
   <Login />
 {:else}
+  {#if team}
+    <p class="team-banner">
+      Team usage of <a href={`/workspaces/${team.slug}`}><strong>{team.name}</strong></a>: folders members linked with
+      <code>clioilc link</code>. Switch to Personal in the header for your own data.
+    </p>
+  {/if}
   <section class="card cal">
     <div class="head">
       <div>
@@ -241,6 +257,17 @@
           <p class="muted small">Loading…</p>
         {/if}
       </div>
+      {#if team}
+        <div class="card">
+          <h2>{metricLabel} by member</h2>
+          <p class="muted small sub">Last {range.label}</p>
+          {#if byMember}
+            <RankedBars rows={memberRows} format={metricFormat} stale={breakdownLoading} />
+          {:else}
+            <p class="muted small">Loading…</p>
+          {/if}
+        </div>
+      {/if}
       <div class="card">
         <h2>{metricLabel} by model</h2>
         <p class="muted small sub">Last {range.label}</p>
@@ -260,6 +287,7 @@
   .cal { margin-bottom: 16px; }
   .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
   .split > .card { min-width: 0; }
+  .team-banner { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--series-1-wash); color: var(--text-secondary); font-size: 13px; }
   .split h2 { margin-bottom: 2px; }
   .sub { margin-bottom: 14px !important; }
   .note { margin-top: 12px !important; }
