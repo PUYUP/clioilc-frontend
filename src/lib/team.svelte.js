@@ -3,7 +3,7 @@
 // memory only, like the account's data key (vault.svelte.js).
 import { api, ApiError } from "./api.js";
 import { Identity, ctxIdentity, ctxProjectName, ctxProjectRemote, ctxWsName, open, seal } from "./e2e-v2.js";
-import { decryptTeamRows, fromB64, hex, keyId, makeGrant, openGrants, splitRecipients, toB64 } from "./team-keys.js";
+import { decryptTeamRows, fromB64, hex, keyId, makeGrant, openGrants, rowFingerprint, splitRecipients, toB64 } from "./team-keys.js";
 import { LockedError, vault } from "./vault.svelte.js";
 
 /**
@@ -191,9 +191,14 @@ export function projectLabel(p, e2e) {
  */
 export async function approve(slug, person) {
   const identity = await ensureIdentity();
-  await pin(person);
-  const { state } = team.states[slug] ?? (await loadKeys(slug));
+  const { state } = await loadKeys(slug);
   const row = state.identities[String(person.user_id)];
+  // Grant only to exactly the keys the user compared: if the server now
+  // reports other keys for this person, stop.
+  if (!row || row.ed25519_pk !== person.ed25519_pk || (await rowFingerprint(row)) !== person.fingerprint) {
+    throw new Error(`@${person.username}'s keys changed since you compared them; compare the new fingerprint.`);
+  }
+  await pin(person);
   const grants = [];
   for (const w of state.waiting.filter((x) => x.user_id === person.user_id)) {
     const key = keyFor(w.target, w.target_id, w.version);
