@@ -6,8 +6,8 @@
   const error = page.url.searchParams.get("error");
   const message =
     error === "cancelled"
-      ? "Login dibatalkan di GitHub."
-      : `Login gagal${error ? ` (${error})` : ""}. Silakan coba lagi.`;
+      ? "Sign-in was cancelled on GitHub."
+      : `Sign-in failed${error ? ` (${error})` : ""}. Please try again.`;
 </script>
 
 <Login {message} />

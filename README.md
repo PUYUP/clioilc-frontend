@@ -29,7 +29,8 @@ CSRF di backend bergantung pada origin ini.
 
 | Path | Isi |
 |---|---|
-| `/` | Dashboard. Rentang 24 jam / 7 / 30 / 90 hari, per jam (sampai 7 hari) atau per hari, pilihan metrik (default: biaya), lima angka ringkasan, grafik kolom dengan tooltip (mouse atau panah kiri/kanan), dan tampilan tabel |
+| `/` | Kalender 53 minggu ala GitHub untuk **Succeeded** (tool berhasil) dan **Failed** (tool error + pesan gagal), klik satu hari untuk membuka aktivitasnya. Di bawahnya dashboard: Rentang 24 jam / 7 / 30 / 90 hari, per jam (sampai 7 hari) atau per hari, pilihan metrik (default: Cost), lima angka ringkasan, grafik kolom dengan tooltip (mouse atau panah kiri/kanan), dan tampilan tabel |
+| `/activity?date=YYYY-MM-DD` | Timeline aktivitas satu hari: prompt, balasan agent, thinking (opsional), dan aksi tool dengan status dan pesan error, dikelompokkan per sesi seperti `clioilc activity`. Ada filter project, pencarian teks, filter **jenis** (You / Agent / Tool) dan **status** (All / Succeeded / Error, untuk tool dan balasan agent), serta biaya per balasan dan per sesi. Filter jenis dan status disimpan di URL (`?type=prompt,tool&status=error`). Klik kotak di baris Failed pada kalender akan membuka hari itu dengan filter Error aktif. Bisa dibuka dari klik batang grafik di dashboard |
 | `/device?code=…` | Menyetujui atau menolak `clioilc login`. Kode boleh huruf kecil dan tanpa tanda strip |
 | `/auth/callback` | Tujuan setelah login GitHub. Mengecek session, lalu kembali ke `next` |
 | `/login/error` | Tujuan saat login gagal (dipakai allauth) |
@@ -37,11 +38,19 @@ CSRF di backend bergantung pada origin ini.
 **Biaya** (`cost_usd`) adalah biaya setara harga API Claude, dihitung backend per pesan dengan
 harga yang menempel saat pesan diterima (lihat `docs/pricing.md` di repo backend). Ini bukan
 tagihan langganan. Pesan dari model yang belum punya harga tidak ikut dijumlahkan, dan
-jumlahnya ditampilkan di bawah angka biaya.
+jumlahnya ditampilkan di bawah angka Cost.
 
 Grafik memakai data publik dari `GET /api/v1/usage/report/` (`by=hour` atau `by=day`) dengan
-zona waktu browser. Jam atau hari tanpa aktivitas diisi nol di sisi frontend. Isi percakapan
-(timeline `activity/`, termasuk dekripsi e2e) belum ditampilkan.
+zona waktu browser. Jam atau hari tanpa aktivitas diisi nol di sisi frontend. Timeline memakai `GET /api/v1/usage/activity/`.
+
+**Akun end-to-end:** halaman aktivitas meminta passphrase, lalu mendekripsi di browser
+(`src/lib/e2e.js`: Argon2id lewat hash-wasm, AES-256-GCM lewat WebCrypto, format v1 dari
+`docs/encryption.md` di repo backend). Data key hanya disimpan di memori tab, jadi passphrase
+diminta lagi setelah halaman dimuat ulang. Modul ini sudah diuji terhadap test vector dan
+ciphertext buatan CLI Rust.
+
+Semua teks di antarmuka berbahasa Inggris, dengan format angka dan tanggal `en-US`
+(`src/lib/format.js`).
 
 ## Struktur
 
@@ -50,15 +59,29 @@ src/lib/api.js              fetch ke API: cookie session + header X-CSRFToken
 src/lib/session.svelte.js   status login (allauth headless), loginWithGitHub, logout
 src/lib/usage.js            ambil report, isi jam/hari kosong, total
 src/lib/ColumnChart.svelte  grafik kolom SVG (tanpa library)
-src/lib/format.js           format angka dan waktu (id-ID, zona browser)
+src/lib/CalendarHeatmap.svelte  kalender berhasil/error 53 minggu
+src/lib/format.js           format angka, mata uang, dan waktu (id-ID, zona browser)
+src/lib/activity.js         ambil activity, dekripsi, susun timeline per sesi
+src/lib/e2e.js              dekripsi e2e (format v1)
+src/lib/vault.svelte.js     data key e2e di memori tab
 src/app.css                 token warna terang/gelap
 src/routes/                 halaman
 ```
 
-**Warna** diambil dari palet dataviz yang sudah divalidasi (satu seri, biru):
-`#2a78d6` untuk mode terang dan `#3987e5` untuk mode gelap. Keduanya lolos semua pemeriksaan
-validator, termasuk kontras ≥ 3:1 terhadap permukaan grafik. Mode gelap mengikuti
-pengaturan OS.
+**Warna** diambil dari palet dataviz yang sudah divalidasi:
+
+- **Grafik kolom** (satu seri, biru): `#2a78d6` untuk mode terang dan `#3987e5` untuk mode
+  gelap. Keduanya lolos semua pemeriksaan validator, termasuk kontras ≥ 3:1 terhadap
+  permukaan grafik.
+- **Kalender:** dua skala satu warna dengan 4 tingkat. Succeeded memakai biru (skala bawaan),
+  Failed memakai oranye (skala kedua). Merah dan hijau tidak dipakai karena keduanya warna
+  status. Tingkat oranye diturunkan dari oranye kategori 2 dengan lightness OKLCH yang sama
+  seperti tingkat biru. Keempat skala lolos `validate_palette.js --ordinal` di mode terang
+  dan gelap. Di mode gelap, arahnya terbalik: makin banyak, makin terang.
+- **Tingkat warna kalender** dihitung dari kuartil hari yang tidak nol di setiap baris,
+  seperti GitHub. Rentang angkanya tertulis di legenda.
+
+Mode gelap mengikuti pengaturan OS.
 
 ## Deploy
 

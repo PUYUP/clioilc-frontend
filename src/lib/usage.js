@@ -3,25 +3,31 @@ import { api } from "./api.js";
 import { isoDate, timeZone } from "./format.js";
 
 export const METRICS = /** @type {const} */ ([
-  { key: "cost_usd", label: "Biaya (setara API)", format: "usd" },
-  { key: "output_tokens", label: "Token output", format: "count" },
-  { key: "input_tokens", label: "Token input", format: "count" },
-  { key: "cache_write_tokens", label: "Token cache write", format: "count" },
-  { key: "cache_read_tokens", label: "Token cache read", format: "count" },
-  { key: "messages", label: "Pesan", format: "count" },
-  { key: "tools", label: "Panggilan tool", format: "count" },
+  { key: "cost_usd", label: "Cost (API equivalent)", format: "usd" },
+  { key: "output_tokens", label: "Output tokens", format: "count" },
+  { key: "input_tokens", label: "Input tokens", format: "count" },
+  { key: "cache_write_tokens", label: "Cache write tokens", format: "count" },
+  { key: "cache_read_tokens", label: "Cache read tokens", format: "count" },
+  { key: "messages", label: "Messages", format: "count" },
+  { key: "tools", label: "Tool calls", format: "count" },
 ]);
 
-/** @typedef {typeof METRICS[number]["key"] | "errors" | "tool_errors" | "unpriced"} MetricKey */
+/** @typedef {typeof METRICS[number]["key"] | "errors" | "tool_errors" | "tool_ok" | "unpriced"} MetricKey */
 /** @typedef {{ t: Date } & Record<MetricKey, number>} Point */
 
-const FIELDS = /** @type {MetricKey[]} */ ([...METRICS.map((m) => m.key), "errors", "tool_errors", "unpriced"]);
+const FIELDS = /** @type {MetricKey[]} */ ([
+  ...METRICS.map((m) => m.key),
+  "errors",
+  "tool_errors",
+  "tool_ok",
+  "unpriced",
+]);
 
 export const RANGES = /** @type {const} */ ([
-  { key: "24h", label: "24 jam", hours: 24, unit: "hour" },
-  { key: "7d", label: "7 hari", days: 7, unit: "day" },
-  { key: "30d", label: "30 hari", days: 30, unit: "day" },
-  { key: "90d", label: "90 hari", days: 90, unit: "day" },
+  { key: "24h", label: "24 hours", hours: 24, unit: "hour" },
+  { key: "7d", label: "7 days", days: 7, unit: "day" },
+  { key: "30d", label: "30 days", days: 30, unit: "day" },
+  { key: "90d", label: "90 days", days: 90, unit: "day" },
 ]);
 
 /** @param {Date} d */
@@ -102,4 +108,27 @@ function addDays(d, n) {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
   return x;
+}
+
+/** @typedef {{ t: Date, ok: number, toolErrors: number, msgErrors: number }} Day */
+
+/**
+ * Last 53 weeks for the calendar heatmap: Monday 52 weeks before this
+ * week's Monday, through today.
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<Day[]>}
+ */
+export async function loadCalendar(signal) {
+  const today = startOfDay(new Date());
+  const monday = addDays(today, -((today.getDay() + 6) % 7));
+  const start = addDays(monday, -52 * 7);
+  const params = new URLSearchParams({ by: "day", start: isoDate(start), end: isoDate(today), tz: timeZone });
+  const report = await api(`/api/v1/usage/report/?${params}`, { signal });
+  const byDay = new Map(report.rows.map((/** @type {any} */ r) => [r.key, r]));
+  const days = [];
+  for (let t = start; t <= today; t = addDays(t, 1)) {
+    const r = byDay.get(isoDate(t));
+    days.push({ t, ok: r?.tool_ok ?? 0, toolErrors: r?.tool_errors ?? 0, msgErrors: r?.errors ?? 0 });
+  }
+  return days;
 }

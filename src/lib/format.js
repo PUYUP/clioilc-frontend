@@ -1,6 +1,6 @@
-const locale = "id-ID";
+const locale = "en-US";
 
-/** 1,284 / 12,9 rb / 4,2 jt: compact for tiles and axes. @param {number} n */
+/** 1,284 / 12.9K / 4.2M: compact for tiles and axes. @param {number} n */
 export function compact(n) {
   return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
@@ -10,7 +10,7 @@ export function full(n) {
   return new Intl.NumberFormat(locale).format(n);
 }
 
-/** US$280,97; small amounts keep enough digits to not read as 0. @param {number} n */
+/** $280.97; small amounts keep enough digits to not read as 0. @param {number} n */
 export function usd(n) {
   const digits = n !== 0 && Math.abs(n) < 0.01 ? 4 : 2;
   return new Intl.NumberFormat(locale, {
@@ -21,7 +21,7 @@ export function usd(n) {
   }).format(n);
 }
 
-/** US$1,2 rb: for axis ticks. @param {number} n */
+/** $1.2K: for axis ticks. @param {number} n */
 export function usdCompact(n) {
   return new Intl.NumberFormat(locale, {
     style: "currency",
@@ -29,6 +29,11 @@ export function usdCompact(n) {
     notation: "compact",
     maximumFractionDigits: n !== 0 && Math.abs(n) < 1 ? 2 : 1,
   }).format(n);
+}
+
+/** "1 error", "48 errors". @param {number} n @param {string} word @param {string} [many] */
+export function count(n, word, many = `${word}s`) {
+  return `${full(n)} ${n === 1 ? word : many}`;
 }
 
 /** The browser's IANA time zone, sent to the API so days match the user's. */

@@ -1,6 +1,7 @@
 <script>
   import "../app.css";
   import { onMount } from "svelte";
+  import { page } from "$app/state";
   import { session, refreshSession, logout } from "$lib/session.svelte.js";
 
   let { children } = $props();
@@ -9,11 +10,19 @@
 
 <header>
   <div class="wrap bar">
-    <a class="brand" href="/">clioilc</a>
+    <div class="left">
+      <a class="brand" href="/">clioilc</a>
+      {#if session.user}
+        <nav>
+          <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Overview</a>
+          <a href="/activity" aria-current={page.url.pathname.startsWith("/activity") ? "page" : undefined}>Activity</a>
+        </nav>
+      {/if}
+    </div>
     {#if session.user}
       <div class="user">
-        <span class="muted">{session.user.username}</span>
-        <button class="btn" onclick={logout}>Keluar</button>
+        <span class="muted username">{session.user.username}</span>
+        <button class="btn" onclick={logout}>Sign out</button>
       </div>
     {/if}
   </div>
@@ -21,9 +30,9 @@
 
 <main class="wrap">
   {#if session.loading}
-    <p class="muted">Memuat…</p>
+    <p class="muted">Loading…</p>
   {:else if session.error}
-    <div class="card"><p class="error">{session.error}</p><p class="muted">Pastikan backend berjalan dan <code>PUBLIC_API_URL</code> benar.</p></div>
+    <div class="card"><p class="error">{session.error}</p><p class="muted">Make sure the backend is running and <code>PUBLIC_API_URL</code> is correct.</p></div>
   {:else}
     {@render children()}
   {/if}
@@ -34,6 +43,15 @@
   header { border-bottom: 1px solid var(--border); background: var(--surface); }
   .bar { display: flex; align-items: center; justify-content: space-between; height: 56px; }
   .brand { font-weight: 650; text-decoration: none; letter-spacing: -0.01em; }
+  .left { display: flex; align-items: center; gap: 20px; min-width: 0; }
+  nav { display: flex; gap: 4px; }
+  nav a { text-decoration: none; color: var(--text-secondary); padding: 6px 10px; border-radius: 8px; font-size: 14px; }
+  nav a:hover { background: var(--ghost); }
+  nav a[aria-current="page"] { color: var(--text-primary); font-weight: 600; background: var(--ghost); }
   .user { display: flex; align-items: center; gap: 12px; }
+  @media (max-width: 520px) {
+    .username { display: none; }
+    .left { gap: 8px; }
+  }
   main.wrap { padding-top: 24px; padding-bottom: 48px; }
 </style>

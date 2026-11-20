@@ -26,7 +26,7 @@ export async function refreshSession() {
     session.error = null;
   } catch {
     session.user = null;
-    session.error = `Tidak bisa menghubungi API di ${API}`;
+    session.error = `Cannot reach the API at ${API}`;
   } finally {
     session.loading = false;
   }

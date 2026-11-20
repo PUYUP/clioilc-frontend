@@ -19,10 +19,10 @@
 
   /** @param {unknown} e */
   function explain(e) {
-    if (e instanceof ApiError && e.status === 404) return "Kode tidak ditemukan. Periksa lagi kode di terminal.";
+    if (e instanceof ApiError && e.status === 404) return "Code not found. Check the code in your terminal.";
     if (e instanceof ApiError && e.status === 410)
-      return "Kode sudah kedaluwarsa atau sudah dipakai. Jalankan `clioilc login` lagi.";
-    return "Terjadi kesalahan. Coba lagi.";
+      return "This code has expired or was already used. Run `clioilc login` again.";
+    return "Something went wrong. Please try again.";
   }
 
   async function lookup() {
@@ -62,34 +62,34 @@
 {#if !session.user}
   <Login
     next={page.url.pathname + page.url.search}
-    message="Masuk untuk menghubungkan perangkat dengan akunmu."
+    message="Sign in to connect a device to your account."
   />
 {:else if phase === "approved"}
   <div class="card box">
-    <h1>Perangkat terhubung</h1>
+    <h1>Device connected</h1>
     <p class="muted">
-      <strong>{auth?.name}</strong> sekarang bisa mengirim data. Kembali ke terminal; <code>clioilc login</code>
-      akan selesai sendiri.
+      <strong>{auth?.name}</strong> can now send data. Go back to your terminal; <code>clioilc login</code>
+      finishes on its own.
     </p>
-    <a class="btn" href="/">Ke dashboard</a>
+    <a class="btn" href="/">Go to dashboard</a>
   </div>
 {:else if phase === "denied"}
   <div class="card box">
-    <h1>Permintaan ditolak</h1>
-    <p class="muted">Perangkat itu tidak mendapat akses. Kamu bisa menutup halaman ini.</p>
+    <h1>Request denied</h1>
+    <p class="muted">That device was not given access. You can close this page.</p>
   </div>
 {:else}
   <div class="card box">
-    <h1>Hubungkan perangkat</h1>
+    <h1>Connect a device</h1>
     {#if !auth}
-      <p class="muted">Masukkan kode yang ditampilkan <code>clioilc login</code> di terminal.</p>
+      <p class="muted">Enter the code shown by <code>clioilc login</code> in your terminal.</p>
       <form
         onsubmit={(e) => {
           e.preventDefault();
           lookup();
         }}
       >
-        <label class="sr" for="code">Kode perangkat</label>
+        <label class="sr" for="code">Device code</label>
         <input
           id="code"
           bind:value={code}
@@ -98,20 +98,20 @@
           autocapitalize="characters"
           spellcheck="false"
         />
-        <button class="btn primary" disabled={phase === "loading" || !code.trim()}>Lanjut</button>
+        <button class="btn primary" disabled={phase === "loading" || !code.trim()}>Continue</button>
       </form>
     {:else}
       <p>
-        <strong class="device">{auth.name}</strong> meminta akses untuk mengirim data aktivitas agent ke akun
+        <strong class="device">{auth.name}</strong> is asking for access to send agent activity to the account
         <strong>{session.user.username}</strong>.
       </p>
       <p class="muted">
-        Kode <code>{auth.user_code}</code>. Hanya izinkan kalau kamu sendiri yang baru saja menjalankan
+        Code <code>{auth.user_code}</code>. Only allow this if you just ran
         <code>clioilc login</code>.
       </p>
       <div class="actions">
-        <button class="btn primary" disabled={phase === "loading"} onclick={() => decide("approve")}>Izinkan</button>
-        <button class="btn" disabled={phase === "loading"} onclick={() => decide("deny")}>Tolak</button>
+        <button class="btn primary" disabled={phase === "loading"} onclick={() => decide("approve")}>Allow</button>
+        <button class="btn" disabled={phase === "loading"} onclick={() => decide("deny")}>Deny</button>
       </div>
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}

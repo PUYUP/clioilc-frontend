@@ -7,8 +7,8 @@
   /** @typedef {(n: number) => string} Formatter */
 
   /** @typedef {{ t: Date, value: number }} Bucket */
-  /** @type {{ buckets: Bucket[], unit: "hour" | "day", label: string, stale?: boolean, formatValue?: Formatter, formatTick?: Formatter }} */
-  let { buckets, unit, label, stale = false, formatValue = full, formatTick = compact } = $props();
+  /** @type {{ buckets: Bucket[], unit: "hour" | "day", label: string, stale?: boolean, formatValue?: Formatter, formatTick?: Formatter, onselect?: (b: Bucket) => void }} */
+  let { buckets, unit, label, stale = false, formatValue = full, formatTick = compact, onselect } = $props();
 
   const HEIGHT = 260;
   const M = { top: 12, right: 8, bottom: 28, left: 52 };
@@ -88,16 +88,21 @@
   <div
     class="plot"
     role="slider"
-    aria-roledescription="grafik kolom"
-    aria-label={`${label}, ${unit === "hour" ? "per jam" : "per hari"}. Panah kiri/kanan untuk membaca nilai.`}
+    aria-roledescription="column chart"
+    aria-label={`${label}, ${unit === "hour" ? "per hour" : "per day"}. Use left/right arrows to read values.`}
     aria-valuemin={0}
     aria-valuemax={Math.max(0, buckets.length - 1)}
     aria-valuenow={active ?? 0}
-    aria-valuetext={tip ? `${longLabel(tip.t, unit)}: ${formatValue(tip.value)}` : "Belum ada kolom dipilih"}
+    aria-valuetext={tip ? `${longLabel(tip.t, unit)}: ${formatValue(tip.value)}` : "No column selected"}
     tabindex="0"
     onpointermove={onMove}
     onpointerleave={() => (active = null)}
-    onkeydown={onKey}
+    onkeydown={(e) => {
+      if (e.key === "Enter" && onselect && active !== null) onselect(buckets[active]);
+      else onKey(e);
+    }}
+    onclick={() => onselect && active !== null && onselect(buckets[active])}
+    class:clickable={!!onselect}
     onblur={() => (active = null)}
   >
   <svg {width} height={HEIGHT} aria-hidden="true">
@@ -134,6 +139,7 @@
       <div class="row"><span class="key"></span><strong>{formatValue(tip.value)}</strong></div>
       <div class="muted small">{label}</div>
       <div class="muted small">{longLabel(tip.t, unit)}</div>
+      {#if onselect}<div class="muted small">Click to see the activity</div>{/if}
     </div>
   {/if}
 </div>
@@ -146,6 +152,7 @@
   }
   .chart.stale { opacity: 0.5; }
   svg { display: block; overflow: visible; touch-action: pan-y; }
+  .clickable { cursor: pointer; }
   .plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
   .grid { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
   .axis { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }

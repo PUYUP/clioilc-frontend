@@ -14,7 +14,7 @@
 </script>
 
 {#if failed}
-  <div class="card"><p class="error">Login tidak selesai.</p><a class="btn" href="/">Coba lagi</a></div>
+  <div class="card"><p class="error">Sign-in did not complete.</p><a class="btn" href="/">Try again</a></div>
 {:else}
-  <p class="muted">Menyelesaikan login…</p>
+  <p class="muted">Finishing sign-in…</p>
 {/if}

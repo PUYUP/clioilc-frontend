@@ -1,10 +1,12 @@
 <script>
+  import { goto } from "$app/navigation";
   import { ApiError } from "$lib/api.js";
+  import CalendarHeatmap from "$lib/CalendarHeatmap.svelte";
   import ColumnChart from "$lib/ColumnChart.svelte";
   import Login from "$lib/Login.svelte";
-  import { compact, full, longLabel, timeZone, usd, usdCompact } from "$lib/format.js";
+  import { compact, count, full, isoDate, longLabel, timeZone, usd, usdCompact } from "$lib/format.js";
   import { session } from "$lib/session.svelte.js";
-  import { METRICS, RANGES, loadSeries, totals } from "$lib/usage.js";
+  import { METRICS, RANGES, loadCalendar, loadSeries, totals } from "$lib/usage.js";
 
   /** @typedef {import("$lib/usage.js").Point} Point */
 
@@ -28,6 +30,19 @@
   const sum = $derived(points ? totals(points) : null);
   const buckets = $derived((points ?? []).map((p) => ({ t: p.t, value: p[metric] })));
 
+  let calendar = $state(/** @type {import("$lib/usage.js").Day[] | null} */ (null));
+  let calendarError = $state(false);
+  $effect(() => {
+    if (!session.user) return;
+    const controller = new AbortController();
+    loadCalendar(controller.signal)
+      .then((d) => (calendar = d))
+      .catch((e) => {
+        if (e.name !== "AbortError") calendarError = true;
+      });
+    return () => controller.abort();
+  });
+
   /** @param {typeof RANGES[number]} r */
   function pickRange(r) {
     rangeKey = r.key;
@@ -45,7 +60,7 @@
       .then((p) => (points = p))
       .catch((e) => {
         if (e.name === "AbortError") return;
-        error = e instanceof ApiError ? `Gagal memuat data (${e.status}).` : "Tidak bisa menghubungi API.";
+        error = e instanceof ApiError ? `Failed to load data (${e.status}).` : "Cannot reach the API.";
       })
       .finally(() => {
         if (!controller.signal.aborted) loading = false;
@@ -57,67 +72,88 @@
 {#if !session.user}
   <Login />
 {:else}
+  <section class="card cal">
+    <div class="head">
+      <div>
+        <h2>Tool calls: succeeded &amp; failed</h2>
+        <p class="muted small">Per day, last 12 months. Click a day to see its activity.</p>
+      </div>
+    </div>
+    {#if calendar}
+      <CalendarHeatmap
+        days={calendar}
+        onselect={(d, series) => goto(`/activity?date=${isoDate(d.t)}${series === "err" ? "&status=error" : ""}`)}
+      />
+    {:else if calendarError}
+      <p class="error">Failed to load the calendar.</p>
+    {:else}
+      <p class="muted small">Loading…</p>
+    {/if}
+  </section>
+
   <div class="filters" role="toolbar" aria-label="Filter">
-    <div class="seg" role="group" aria-label="Rentang waktu">
+    <div class="seg" role="group" aria-label="Time range">
       {#each RANGES as r (r.key)}
         <button aria-pressed={rangeKey === r.key} onclick={() => pickRange(r)}>{r.label}</button>
       {/each}
     </div>
-    <div class="seg" role="group" aria-label="Satuan waktu">
-      <button aria-pressed={unit === "hour"} disabled={!hourAllowed} onclick={() => (unit = "hour")}>Per jam</button>
-      <button aria-pressed={unit === "day"} onclick={() => (unit = "day")}>Per hari</button>
+    <div class="seg" role="group" aria-label="Time unit">
+      <button aria-pressed={unit === "hour"} disabled={!hourAllowed} onclick={() => (unit = "hour")}>Hourly</button>
+      <button aria-pressed={unit === "day"} onclick={() => (unit = "day")}>Daily</button>
     </div>
     <label class="select">
-      <span class="sr">Metrik</span>
+      <span class="sr">Metric</span>
       <select bind:value={metric}>
         {#each METRICS as m (m.key)}<option value={m.key}>{m.label}</option>{/each}
       </select>
     </label>
-    <span class="muted tz">Zona waktu: {timeZone}</span>
+    <span class="muted tz">Time zone: {timeZone}</span>
   </div>
 
   {#if error}
     <div class="card"><p class="error" role="alert">{error}</p></div>
   {:else if sum}
     <section class="tiles" class:stale={loading}>
-      <div class="card tile"><div class="label">Biaya (setara API)</div><div class="value">{usd(sum.cost_usd)}</div>
+      <div class="card tile"><div class="label">Cost (API equivalent)</div><div class="value">{usd(sum.cost_usd)}</div>
         <div class="muted small">
-          {#if sum.unpriced > 0}+ {full(sum.unpriced)} pesan tanpa harga{:else}harga API Claude, bukan tagihan{/if}
+          {#if sum.unpriced > 0}+ {count(sum.unpriced, "message")} without a price{:else}Claude API prices, not your bill{/if}
         </div></div>
-      <div class="card tile"><div class="label">Pesan</div><div class="value">{compact(sum.messages)}</div>
-        <div class="muted small">{full(sum.errors)} error</div></div>
-      <div class="card tile"><div class="label">Token output</div><div class="value">{compact(sum.output_tokens)}</div></div>
-      <div class="card tile"><div class="label">Token cache read</div><div class="value">{compact(sum.cache_read_tokens)}</div></div>
-      <div class="card tile"><div class="label">Panggilan tool</div><div class="value">{compact(sum.tools)}</div>
-        <div class="muted small">{full(sum.tool_errors)} error</div></div>
+      <div class="card tile"><div class="label">Messages</div><div class="value">{compact(sum.messages)}</div>
+        <div class="muted small">{count(sum.errors, "error")}</div></div>
+      <div class="card tile"><div class="label">Output tokens</div><div class="value">{compact(sum.output_tokens)}</div></div>
+      <div class="card tile"><div class="label">Cache read tokens</div><div class="value">{compact(sum.cache_read_tokens)}</div></div>
+      <div class="card tile"><div class="label">Tool calls</div><div class="value">{compact(sum.tools)}</div>
+        <div class="muted small">{count(sum.tool_errors, "error")}</div></div>
     </section>
 
     <section class="card">
       <div class="head">
         <div>
           <h2>{metricLabel}</h2>
-          <p class="muted small">{unit === "hour" ? "Per jam" : "Per hari"}, {range.label} terakhir</p>
+          <p class="muted small">{unit === "hour" ? "Hourly" : "Daily"}, last {range.label}</p>
         </div>
         <button class="btn" aria-pressed={showTable} onclick={() => (showTable = !showTable)}>
-          {showTable ? "Grafik" : "Tabel"}
+          {showTable ? "Chart" : "Table"}
         </button>
       </div>
 
       {#if sum.messages === 0 && !loading}
         <div class="empty">
-          <p>Belum ada data di rentang ini.</p>
-          <p class="muted small">Kirim data dari laptop dengan <code>clioilc login</code> lalu <code>clioilc sync</code>
-            (atau <code>clioilc watch --sync</code>).</p>
+          <p>No data in this range yet.</p>
+          <p class="muted small">Send data from your laptop with <code>clioilc login</code>, then <code>clioilc sync</code>
+            (or <code>clioilc watch --sync</code>).</p>
         </div>
       {:else if showTable}
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Waktu</th>{#each METRICS as m (m.key)}<th class="num">{m.label}</th>{/each}</tr></thead>
+            <thead><tr><th>Time</th>{#each METRICS as m (m.key)}<th class="num">{m.label}</th>{/each}<th class="num">Tool calls succeeded</th><th class="num">Errors (tool + message)</th></tr></thead>
             <tbody>
               {#each [...(points ?? [])].reverse() as p (p.t.getTime())}
                 <tr>
                   <td>{longLabel(p.t, unit)}</td>
                   {#each METRICS as m (m.key)}<td class="num">{fmt(m, p[m.key])}</td>{/each}
+                  <td class="num">{full(p.tool_ok)}</td>
+                  <td class="num">{full(p.tool_errors + p.errors)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -131,15 +167,17 @@
           stale={loading}
           formatValue={metricDef.format === "usd" ? usd : full}
           formatTick={metricDef.format === "usd" ? usdCompact : compact}
+          onselect={(b) => goto(`/activity?date=${isoDate(b.t)}`)}
         />
       {/if}
     </section>
   {:else}
-    <p class="muted">Memuat data…</p>
+    <p class="muted">Loading data…</p>
   {/if}
 {/if}
 
 <style>
+  .cal { margin-bottom: 16px; }
   .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
   .seg button { border: 0; background: none; padding: 6px 12px; color: var(--text-secondary); }
