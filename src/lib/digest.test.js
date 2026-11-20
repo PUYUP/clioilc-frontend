@@ -1,0 +1,98 @@
+import { describe, expect, it } from "vitest";
+import { buildDigest, commitMessage, duration, isProjectFile, projectRoot, promptLine } from "./digest.js";
+
+describe("commitMessage", () => {
+  it.each([
+    [
+      "Stage everything: git add -A && git commit -q -F - <<'EOF'\nInitial commit: snailstamp API\n\nBody",
+      "Initial commit: snailstamp API",
+    ],
+    ['Commit: git commit -m "Fix login redirect" && git push', "Fix login redirect"],
+    ["Commit: git commit -am 'Bump version to 1.2'", "Bump version to 1.2"],
+    ['Commit: git commit -m "Say \\"hi\\" properly"', 'Say "hi" properly'],
+    ["Commit: git commit -m \"$(cat <<'EOF'\nAdd devices page\n\nBody\nEOF\n)\"", "Add devices page"],
+    ["Commit: git -C repo commit -q -F - <<EOF\nShort subject\nEOF", "Short subject"],
+  ])("reads %j", (summary, want) => {
+    expect(commitMessage(summary)).toBe(want);
+  });
+
+  it("ignores other git commands", () => {
+    expect(commitMessage("Show status: git status && git log --oneline")).toBeNull();
+    expect(commitMessage("Run tests: cargo test -q")).toBeNull();
+  });
+});
+
+describe("promptLine", () => {
+  it("keeps the first meaningful line", () => {
+    expect(promptLine("\n\nfirst line\nsecond")).toBe("first line");
+    expect(promptLine("x".repeat(200))).toHaveLength(160);
+  });
+  it("drops harness noise", () => {
+    for (const t of ["<command-name>/clear</command-name>", "[Request interrupted by user]", "This session is being continued from…", "Caveat: …"]) {
+      expect(promptLine(t)).toBeNull();
+    }
+  });
+});
+
+describe("files", () => {
+  it("finds the project folder from the Claude project name", () => {
+    expect(projectRoot("-Volumes-SSD1-Private-clioilc-tracker", ["/Volumes/SSD1/Private/clioilc/tracker/core/src/a.rs"])).toBe(
+      "/Volumes/SSD1/Private/clioilc/tracker/",
+    );
+    expect(projectRoot("-Volumes-SSD1-Private-snailers", ["/Volumes/SSD1/Private/other/a.rs"])).toBeNull();
+  });
+  it("skips scratch space and ~/.claude", () => {
+    expect(isProjectFile("/Volumes/SSD1/Private/app/src/main.rs")).toBe(true);
+    expect(isProjectFile("/Users/me/.claude/projects/-x/memory/note.md")).toBe(false);
+    expect(isProjectFile("/private/tmp/claude-502/x/scratchpad/a.py")).toBe(false);
+    expect(isProjectFile("relative/path.txt")).toBe(false);
+  });
+});
+
+describe("duration", () => {
+  it("formats minutes and hours", () => {
+    expect(duration(0)).toBe("<1m");
+    expect(duration(35 * 60000)).toBe("35m");
+    expect(duration(125 * 60000)).toBe("2h 05m");
+  });
+});
+
+describe("buildDigest", () => {
+  /** @param {number} min */
+  const t = (min) => new Date(Date.UTC(2026, 10, 20, 9, min));
+  const base = { projectId: "p1", sessionId: "s1", isSubagent: false, status: null };
+  /** @type {any} */
+  const day = {
+    projects: new Map([["p1", "-Volumes-SSD1-Private-app"]]),
+    messages: new Map([
+      ["m1", { cost_usd: 0.5, status: "ok" }],
+      ["m2", { cost_usd: 0.25, status: "overloaded" }],
+    ]),
+    items: [
+      { ...base, id: "1", ts: t(0), kind: "prompt", text: "add a login page" },
+      { ...base, id: "2", ts: t(1), kind: "text", text: "On it.", messageId: "m1" },
+      { ...base, id: "3", ts: t(2), kind: "tool", text: "/Volumes/SSD1/Private/app/src/login.ts", messageId: "m1", tool: { name: "Write", status: "ok", error: null } },
+      { ...base, id: "4", ts: t(3), kind: "tool", text: "/Volumes/SSD1/Private/app/src/login.ts", messageId: "m1", tool: { name: "Edit", status: "ok", error: null } },
+      { ...base, id: "5", ts: t(4), kind: "tool", text: 'Commit: git commit -m "Add login page" && git push', messageId: "m1", tool: { name: "Bash", status: "ok", error: null } },
+      { ...base, id: "6", ts: t(5), kind: "tool", text: "Run tests: npm test", messageId: "m2", tool: { name: "Bash", status: "error", error: "1 failed" } },
+      // 40 minutes later: idle gap, not active time.
+      { ...base, id: "7", ts: t(45), kind: "text", text: "Done.", messageId: "m2" },
+    ],
+  };
+
+  it("summarises a project's day", () => {
+    const { projects, totals } = buildDigest(day);
+    expect(projects).toHaveLength(1);
+    const p = projects[0];
+    expect(p.prompts).toEqual(["add a login page"]);
+    expect(p.commits.map((c) => c.message)).toEqual(["Add login page"]);
+    expect(p.pushed).toBe(true);
+    expect(p.files).toEqual([{ path: "src/login.ts", edits: 2 }]);
+    expect(p.toolErrors).toBe(1);
+    expect(p.messageErrors).toBe(1);
+    expect(p.failingTools).toEqual([{ name: "Bash", count: 1 }]);
+    expect(p.costUsd).toBeCloseTo(0.75);
+    expect(p.activeMs).toBe(5 * 60000);
+    expect(totals).toMatchObject({ commits: 1, files: 1, errors: 2, sessions: 1 });
+  });
+});

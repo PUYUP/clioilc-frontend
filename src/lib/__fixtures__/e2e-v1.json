@@ -1,0 +1,28 @@
+{
+  "passphrase": "passphrase",
+  "kek_hex": "ab76d9ada2f130af1f8594d81020c6a39202dc3e17350172f7507e87cfaa65bb",
+  "keyring": {
+    "kdf": {
+      "algorithm": "argon2id",
+      "salt": "AQEBAQEBAQEBAQEBAQEBAQ==",
+      "memory_kib": 1024,
+      "iterations": 1,
+      "parallelism": 1
+    },
+    "wrapped_key": "AQICAgICAgICAgICAkMY8L1KZjHznzaZMikvfjKDgp66n/ZM6isuKmAuRq1QMZNRL1es39EFpeEJH7WdAA==",
+    "salt": "AQMDAwMDAwMDAwMDA+dCNd8Cm1sf11QPd8SjXQ4TX//50/E1uIu0TxQNK6BbV6N6goXkHaOaQtHJlo/QUg=="
+  },
+  "dek_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "salt_hex": "0909090909090909090909090909090909090909090909090909090909090909",
+  "record": {
+    "kind": "prompt",
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ciphertext": "AQQEBAQEBAQEBAQEBB+lvvpGP/T+vloyDwfHgSKkaT1UQrlX3ScfDJA9JFu7jUUWUWMCSRuT0RssTe5t0RzK9bzuz7m03chjnnmf9jeUW8oxbVYEKUCqI6oYPv6IOf0rm2/gQFUSgHSTlb9R2ywiRNHg1O2GRDp9hiMjPj4sxyx3wBYrpT2CnjcvBjXG1qeNmLeoyIqmqpCkgO5JibOCnqUF430VSojzydCj0IhYwoWa3tHATJ6XXf2k9w=="
+  },
+  "record_data": {
+    "project_id": "00000000000000000000000000000000",
+    "session_id": "11111111111111111111111111111111",
+    "is_subagent": false,
+    "text": "fix the login bug ✓"
+  }
+}
