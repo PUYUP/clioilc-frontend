@@ -5,14 +5,15 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { api, ApiError } from "$lib/api.js";
-  import { ago } from "$lib/format.js";
+  import { describe } from "$lib/audit.js";
+  import { ago, longLabel, timeZone } from "$lib/format.js";
   import Login from "$lib/Login.svelte";
   import { refreshWorkspaces, setScope } from "$lib/scope.svelte.js";
   import { session } from "$lib/session.svelte.js";
 
   /**
    * @typedef {{ slug: string, name: string, role: string | null, can: { manage_projects: boolean, manage_members: boolean, delete: boolean, transfer: boolean } }} Workspace
-   * @typedef {{ slug: string, name: string, role: string | null, sources: number, can: { link: boolean, manage_access: boolean, manage: boolean } }} Project
+   * @typedef {{ slug: string, name: string, git_remote: string, role: string | null, sources: number, can: { link: boolean, manage_access: boolean, manage: boolean } }} Project
    * @typedef {{ id: number, username: string, avatar_url: string | null, role: string }} Member
    * @typedef {{ id: number, project: { slug: string, name: string } | null, role: string, github_login: string, invited_by: string | null, expires_at: string, url?: string }} Invite
    */
@@ -42,6 +43,11 @@
   // Forms
   let projectName = $state("");
   let projectSlug = $state("");
+  let projectRemote = $state("");
+  let editingRemote = $state(/** @type {string | null} */ (null));
+  let remoteDraft = $state("");
+  let events = $state(/** @type {import("$lib/audit.js").AuditEvent[] | null} */ (null));
+  let auditNext = $state(/** @type {number | null} */ (null));
   let inviteLogin = $state("");
   let inviteTarget = $state(""); // "" = whole workspace, else a project slug
   let inviteRole = $state("member");
@@ -94,6 +100,7 @@
     projects = p;
     members = m;
     invites = inv;
+    if (w.can.manage_members) loadAudit(s, null, signal);
     const settings = await Promise.all(
       p.map((/** @type {Project} */ x) => api(`/api/v1/workspaces/${s}/projects/${x.slug}/me/`, { signal })),
     );
@@ -123,15 +130,34 @@
     }
   }
 
+  /** @param {string} s @param {number | null} before @param {AbortSignal} [signal] */
+  async function loadAudit(s, before, signal) {
+    const q = before ? `?before=${before}` : "";
+    const page = await api(`/api/v1/workspaces/${s}/audit/${q}`, { signal });
+    events = before ? [...(events ?? []), ...page.events] : page.events;
+    auditNext = page.next;
+  }
+
+  /** @param {Project} p */
+  const saveRemote = (p) =>
+    run(async () => {
+      const updated = await api(`/api/v1/workspaces/${slug}/projects/${p.slug}/`, {
+        method: "PATCH",
+        body: { git_remote: remoteDraft },
+      });
+      projects = projects.map((x) => (x.slug === p.slug ? { ...x, git_remote: updated.git_remote } : x));
+      editingRemote = null;
+    }, "Failed to save the git remote.");
+
   const createProject = () =>
     run(async () => {
       const p = await api(`/api/v1/workspaces/${slug}/projects/`, {
         method: "POST",
-        body: { name: projectName, slug: projectSlug || toSlug(projectName) },
+        body: { name: projectName, slug: projectSlug || toSlug(projectName), git_remote: projectRemote },
       });
       projects = [...projects, p].sort((a, b) => a.slug.localeCompare(b.slug));
       shareText[p.slug] = false;
-      projectName = projectSlug = "";
+      projectName = projectSlug = projectRemote = "";
     }, "Failed to create the project.");
 
   /** @param {Project} p */
@@ -279,16 +305,41 @@
                 <span class="muted small">
                   {p.slug} · {p.sources === 1 ? "1 linked folder" : `${p.sources} linked folders`}{p.role ? ` · you: ${p.role}` : ""}
                 </span>
+                {#if p.git_remote}<span class="muted small remote">git: {p.git_remote}</span>{/if}
               </div>
               <div class="actions">
                 {#if p.can.manage_access}
                   <button class="btn" onclick={() => toggleCollaborators(p)}>{collaborators[p.slug] ? "Hide collaborators" : "Collaborators"}</button>
+                {/if}
+                {#if p.can.manage && editingRemote !== p.slug}
+                  <button class="btn" onclick={() => ((editingRemote = p.slug), (remoteDraft = p.git_remote))}>Git remote…</button>
                 {/if}
                 {#if p.can.manage && removing !== `p:${p.slug}`}
                   <button class="btn" onclick={() => (removing = `p:${p.slug}`)}>Delete…</button>
                 {/if}
               </div>
             </div>
+            {#if editingRemote === p.slug}
+              <form
+                class="inline remote-form"
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  saveRemote(p);
+                }}
+              >
+                <input
+                  class="input"
+                  placeholder="git@github.com:acme/api.git"
+                  maxlength="300"
+                  bind:value={remoteDraft}
+                  aria-label={`Git remote of ${p.name}`}
+                  spellcheck="false"
+                />
+                <button class="btn" type="submit" disabled={busy}>Save</button>
+                <button class="btn" type="button" onclick={() => (editingRemote = null)}>Cancel</button>
+              </form>
+              <p class="muted small hint">With it, <code>clioilc link</code> run in a clone of this repo finds the project by itself. Leave empty to remove.</p>
+            {/if}
             {#if removing === `p:${p.slug}`}
               <div class="confirm">
                 <p class="small">Delete <strong>{p.name}</strong>? Links and collaborator access are removed. Members' own data is not deleted.</p>
@@ -345,6 +396,14 @@
           pattern="[a-z0-9]+(-[a-z0-9]+)*"
           bind:value={projectSlug}
           aria-label="Project URL name"
+        />
+        <input
+          class="input"
+          placeholder="Git remote (optional)"
+          maxlength="300"
+          bind:value={projectRemote}
+          aria-label="Project git remote"
+          spellcheck="false"
         />
         <button class="btn" type="submit" disabled={busy || !projectName}>Add project</button>
       </form>
@@ -458,6 +517,28 @@
     </section>
   {/if}
 
+  {#if ws.can.manage_members && events}
+    <section class="card">
+      <h2>Audit log</h2>
+      {#if events.length === 0}
+        <p class="muted small">Nothing yet.</p>
+      {:else}
+        <ol class="audit">
+          {#each events as e (e.id)}
+            {@const when = new Date(e.created_at)}
+            <li class="small">
+              <time datetime={e.created_at} title={`${longLabel(when, "hour")} (${timeZone})`}>{ago(when)}</time>
+              <span>{describe(e)}</span>
+            </li>
+          {/each}
+        </ol>
+        {#if auditNext}
+          <button class="btn more" disabled={busy} onclick={() => run(() => loadAudit(slug, auditNext), "Failed to load more.")}>Load older</button>
+        {/if}
+      {/if}
+    </section>
+  {/if}
+
   {#if ws.can.manage_members}
     <section class="card">
       <h2>Settings</h2>
@@ -526,4 +607,12 @@
   .copy code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
   .danger-zone { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
   .danger-zone p { margin: 0 0 4px; }
+  .remote { overflow-wrap: anywhere; }
+  .remote-form { margin-top: 0; }
+  .hint { margin: 0; }
+  .audit { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .audit li { display: grid; grid-template-columns: 90px 1fr; gap: 8px; }
+  .audit time { color: var(--text-muted); white-space: nowrap; }
+  .audit span { overflow-wrap: anywhere; }
+  .more { margin-top: 10px; }
 </style>
