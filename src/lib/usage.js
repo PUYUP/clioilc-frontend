@@ -54,20 +54,8 @@ const empty = (/** @type {Date} */ t) => /** @type {Point} */ ({ t, ...Object.fr
  * @param {AbortSignal} [signal]
  */
 export async function loadSeries(range, unit, signal) {
-  const now = new Date();
-  const hours = "hours" in range ? range.hours : range.days * 24;
-  // Window [from, to): ends after the current hour/day, so it is included.
-  const to = unit === "hour" ? new Date(startOfHour(now).getTime() + 3600e3) : addDays(startOfDay(now), 1);
-  const from =
-    unit === "hour" ? new Date(to.getTime() - hours * 3600e3) : addDays(to, -Math.max(1, Math.round(hours / 24)));
-
-  const params = new URLSearchParams({
-    by: unit,
-    start: isoDate(from),
-    end: isoDate(new Date(to.getTime() - 1)),
-    tz: timeZone,
-  });
-  const report = await api(`/api/v1/usage/report/?${params}`, { signal });
+  const { from, to } = windowOf(range, unit);
+  const report = await api(`/api/v1/usage/report/?${reportParams(unit, from, to)}`, { signal });
 
   /** @type {Map<number, Point>} */
   const byTime = new Map();
@@ -83,6 +71,44 @@ export async function loadSeries(range, unit, signal) {
     points.push(byTime.get(t.getTime()) ?? empty(t));
   }
   return points;
+}
+
+/**
+ * The time window [from, to) a range covers: ends after the current
+ * hour/day, so it is included. Shared by the chart and the breakdowns so
+ * their numbers agree.
+ * @param {typeof RANGES[number]} range @param {"hour" | "day"} unit
+ */
+export function windowOf(range, unit) {
+  const now = new Date();
+  const hours = "hours" in range ? range.hours : range.days * 24;
+  const to = unit === "hour" ? new Date(startOfHour(now).getTime() + 3600e3) : addDays(startOfDay(now), 1);
+  const from =
+    unit === "hour" ? new Date(to.getTime() - hours * 3600e3) : addDays(to, -Math.max(1, Math.round(hours / 24)));
+  return { from, to };
+}
+
+/** Report query for [from, to): whole days plus an exact `since`. @param {string} by @param {Date} from @param {Date} to */
+function reportParams(by, from, to) {
+  return new URLSearchParams({
+    by,
+    start: isoDate(from),
+    end: isoDate(new Date(to.getTime() - 1)),
+    since: from.toISOString(),
+    tz: timeZone,
+  });
+}
+
+/**
+ * Totals per project or model over a range, largest `metric` first.
+ * @param {"project" | "model"} by @param {typeof RANGES[number]} range
+ * @param {"hour" | "day"} unit @param {AbortSignal} [signal]
+ * @returns {Promise<({ key: string } & Record<MetricKey, number>)[]>}
+ */
+export async function loadBreakdown(by, range, unit, signal) {
+  const { from, to } = windowOf(range, unit);
+  const report = await api(`/api/v1/usage/report/?${reportParams(by, from, to)}`, { signal });
+  return report.rows.map((/** @type {any} */ r) => ({ key: String(r.key), ...pick(r) }));
 }
 
 /** @param {Point[]} points */

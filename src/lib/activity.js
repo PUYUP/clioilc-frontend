@@ -118,9 +118,66 @@ export function groupBySession(items, messages) {
   return groups;
 }
 
+/**
+ * Labels for Claude project folder names (`-Volumes-SSD1-Private-app`):
+ * drops the dash-separated prefix shared by the most projects (at least
+ * two; longest wins a tie), from the projects that have it, so the part
+ * that tells them apart stays visible. Others keep their full name.
+ * @param {Iterable<string>} allNames
+ * @returns {(name: string | undefined) => string}
+ */
+export function projectLabeler(allNames) {
+  const split = [...new Set(allNames)].map((n) => n.replace(/^-/, "").split("-"));
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const parts of split) {
+    // Proper prefixes only: at least one segment must remain.
+    for (let len = 1; len < parts.length; len++) {
+      const key = parts.slice(0, len).join("-");
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  let best = "";
+  let bestCount = 1;
+  for (const [key, n] of counts) {
+    if (n > bestCount || (n === bestCount && n > 1 && key.length > best.length)) {
+      best = key;
+      bestCount = n;
+    }
+  }
+  return (name) => {
+    if (!name) return shortProject(name);
+    const clean = name.replace(/^-/, "");
+    return shortProject(best && clean.startsWith(`${best}-`) ? clean.slice(best.length + 1) : clean);
+  };
+}
+
 /** Claude project folder name -> something short to show. @param {string | undefined} name */
 export function shortProject(name) {
   if (!name) return "unknown project";
   const clean = name.replace(/^-/, "");
   return clean.length > 42 ? `…${clean.slice(-41)}` : clean;
+}
+
+/**
+ * Project names by project_id, for labelling hashes. E2E names need the
+ * unlocked data key; without it the map is empty and `locked` is true.
+ * @param {Uint8Array<ArrayBuffer> | null} dataKey @param {AbortSignal} [signal]
+ */
+export async function loadProjectNames(dataKey, signal) {
+  const res = await api("/api/v1/usage/projects/", { signal });
+  /** @type {Map<string, string>} */
+  const names = new Map();
+  let locked = false;
+  for (const p of res.projects) {
+    if (p.data) names.set(p.id, p.data.name);
+    else if (p.ciphertext && dataKey) {
+      try {
+        names.set(p.id, (await decryptRecord(dataKey, p)).name);
+      } catch {
+        /* unreadable: keep the hash */
+      }
+    } else if (p.ciphertext) locked = true;
+  }
+  return { names, locked };
 }

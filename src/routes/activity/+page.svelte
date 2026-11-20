@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { ApiError } from "$lib/api.js";
-  import { LockedError, groupBySession, loadActivity, shortProject } from "$lib/activity.js";
+  import { LockedError, groupBySession, loadActivity, projectLabeler } from "$lib/activity.js";
   import { isoDate, timeZone, usd } from "$lib/format.js";
   import { renderMarkdown } from "$lib/markdown.js";
   import Login from "$lib/Login.svelte";
@@ -120,6 +120,7 @@
   // Newest first by default (sessions and the entries inside them);
   // ?order=asc reads the day from its start.
   const oldestFirst = $derived(page.url.searchParams.get("order") === "asc");
+  const labelProject = $derived(projectLabeler(data ? data.projects.values() : []));
   const groups = $derived(
     data ? groupBySession(oldestFirst ? visible : [...visible].reverse(), data.messages) : [],
   );
@@ -127,7 +128,7 @@
     data
       ? [...new Set(data.items.map((i) => i.projectId).filter((p) => p !== null))].map((id) => ({
           id: /** @type {string} */ (id),
-          name: shortProject(data?.projects.get(/** @type {string} */ (id))),
+          name: labelProject(data?.projects.get(/** @type {string} */ (id))),
         }))
       : [],
   );
@@ -268,7 +269,7 @@
         <section class="card group">
           <header>
             <strong title={data.projects.get(g.projectId ?? "") ?? ""}>
-              {g.projectId === null ? "Continued from another day" : shortProject(data.projects.get(g.projectId))}
+              {g.projectId === null ? "Continued from another day" : labelProject(data.projects.get(g.projectId))}
             </strong>
             <span class="muted small">
               {[`session ${g.sessionId?.slice(0, 8) ?? "–"}`, `${g.items.length} ${g.items.length === 1 ? "entry" : "entries"}`, g.costUsd > 0 ? usd(g.costUsd) : null]

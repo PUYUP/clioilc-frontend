@@ -29,7 +29,7 @@ CSRF di backend bergantung pada origin ini.
 
 | Path | Isi |
 |---|---|
-| `/` | Kalender 53 minggu ala GitHub untuk **Succeeded** (tool berhasil) dan **Failed** (tool error + pesan gagal), klik satu hari untuk membuka aktivitasnya. Di bawahnya dashboard: Rentang 24 jam / 7 / 30 / 90 hari, per jam (sampai 7 hari) atau per hari, pilihan metrik (default: Cost), lima angka ringkasan, grafik kolom dengan tooltip (mouse atau panah kiri/kanan), dan tampilan tabel |
+| `/` | Di bagian bawah: **biaya per project** dan **per model** (atau metrik lain yang dipilih) untuk rentang yang sama, sebagai bar berperingkat (8 teratas, sisanya digabung ke "Other"), dengan nilai dan persentase tertulis. Nama project dipendekkan dengan membuang awalan folder yang paling banyak dipakai (`-Volumes-SSD1-Private-app` menjadi `app`); nama lengkapnya ada di tooltip. Di atas: kalender 53 minggu ala GitHub untuk **Succeeded** (tool berhasil) dan **Failed** (tool error + pesan gagal), klik satu hari untuk membuka aktivitasnya. Di bawahnya dashboard: Rentang 24 jam / 7 / 30 / 90 hari, per jam (sampai 7 hari) atau per hari, pilihan metrik (default: Cost), lima angka ringkasan, grafik kolom dengan tooltip (mouse atau panah kiri/kanan), dan tampilan tabel |
 | `/activity?date=YYYY-MM-DD` | Timeline aktivitas satu hari: prompt, balasan agent, thinking, dan aksi tool dengan status dan pesan error, dikelompokkan per sesi seperti `clioilc activity`. Ada filter project, pencarian teks, filter **jenis** (You / Agent / Thinking / Tool; Thinking mati secara default, nyalakan sendiri untuk melihatnya di sela timeline, atau matikan yang lain untuk membaca thinking saja) dan **status** (All / Succeeded / Error, untuk tool dan balasan agent), serta biaya per balasan dan per sesi. Urutannya terbaru di atas, baik untuk sesi maupun entri di dalamnya. Tombol "Oldest first" membaliknya (`?order=asc`). Filter jenis dan status disimpan di URL (`?type=prompt,tool&status=error`). Klik kotak di baris Failed pada kalender akan membuka hari itu dengan filter Error aktif. Bisa dibuka dari klik batang grafik di dashboard |
 | `/devices` | Daftar perangkat yang terhubung lewat `clioilc login`: nama, status **Active** (sync dalam 5 menit terakhir) atau **Idle**, waktu sync terakhir, jumlah pesan yang dikirim, pesan terbaru, dan kapan terhubung. **Revoke…** mencabut token perangkat setelah konfirmasi; perangkat itu langsung berhenti sync, data yang sudah terkirim tetap ada |
 | `/device?code=…` | Menyetujui atau menolak `clioilc login`. Kode boleh huruf kecil dan tanpa tanda strip |
@@ -68,13 +68,14 @@ src/lib/session.svelte.js   status login (allauth headless), loginWithGitHub, lo
 src/lib/usage.js            ambil report, isi jam/hari kosong, total
 src/lib/ColumnChart.svelte  grafik kolom SVG (tanpa library)
 src/lib/CalendarHeatmap.svelte  kalender berhasil/error 53 minggu
+src/lib/RankedBars.svelte   bar berperingkat (biaya per project / model)
 src/lib/format.js           format angka, mata uang, dan waktu (id-ID, zona browser)
 src/lib/activity.js         ambil activity, dekripsi, susun timeline per sesi
 src/lib/e2e.js              dekripsi e2e (format v1)
 src/lib/markdown.js         render markdown yang aman (marked + DOMPurify)
 src/lib/vault.svelte.js     data key e2e di memori tab
 src/app.css                 token warna terang/gelap
-src/routes/                 halaman
+src/routes/                 halaman (/, /activity, /devices, /device, /auth/callback, /login/error)
 ```
 
 **Warna** diambil dari palet dataviz yang sudah divalidasi:

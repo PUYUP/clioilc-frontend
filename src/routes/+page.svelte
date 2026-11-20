@@ -5,8 +5,11 @@
   import ColumnChart from "$lib/ColumnChart.svelte";
   import Login from "$lib/Login.svelte";
   import { compact, count, full, isoDate, longLabel, timeZone, usd, usdCompact } from "$lib/format.js";
+  import { loadProjectNames, projectLabeler } from "$lib/activity.js";
+  import RankedBars from "$lib/RankedBars.svelte";
   import { session } from "$lib/session.svelte.js";
-  import { METRICS, RANGES, loadCalendar, loadSeries, totals } from "$lib/usage.js";
+  import { vault } from "$lib/vault.svelte.js";
+  import { METRICS, RANGES, loadBreakdown, loadCalendar, loadSeries, totals } from "$lib/usage.js";
 
   /** @typedef {import("$lib/usage.js").Point} Point */
 
@@ -27,6 +30,59 @@
   const metricLabel = $derived(metricDef.label);
   /** @param {typeof METRICS[number]} m @param {number} v */
   const fmt = (m, v) => (m.format === "usd" ? usd(v) : full(v));
+
+  // Where the selected metric goes, per project and per model, over the
+  // same window as the chart.
+  let byProject = $state(/** @type {Awaited<ReturnType<typeof loadBreakdown>> | null} */ (null));
+  let byModel = $state(/** @type {Awaited<ReturnType<typeof loadBreakdown>> | null} */ (null));
+  let names = $state(/** @type {Map<string, string>} */ (new Map()));
+  let namesLocked = $state(false);
+  let breakdownLoading = $state(false);
+
+  $effect(() => {
+    if (!session.user) return;
+    const controller = new AbortController();
+    const r = range;
+    const u = unit === "hour" && !hourAllowed ? "day" : unit;
+    breakdownLoading = true;
+    Promise.all([loadBreakdown("project", r, u, controller.signal), loadBreakdown("model", r, u, controller.signal)])
+      .then(([p, m]) => {
+        byProject = p;
+        byModel = m;
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) breakdownLoading = false;
+      });
+    return () => controller.abort();
+  });
+
+  $effect(() => {
+    if (!session.user) return;
+    const controller = new AbortController();
+    loadProjectNames(vault.dataKey, controller.signal)
+      .then((res) => {
+        names = res.names;
+        namesLocked = res.locked;
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  });
+
+  const labelProject = $derived(projectLabeler(names.values()));
+  const projectRows = $derived(
+    (byProject ?? []).map((r) => {
+      const name = names.get(r.key);
+      return {
+        key: r.key,
+        label: name ? labelProject(name) : `project ${r.key.slice(0, 8)}`,
+        title: name ?? r.key,
+        value: r[metric],
+      };
+    }),
+  );
+  const modelRows = $derived((byModel ?? []).map((r) => ({ key: r.key, label: r.key, value: r[metric] })));
+  const metricFormat = $derived(metricDef.format === "usd" ? usd : full);
   const sum = $derived(points ? totals(points) : null);
   const buckets = $derived((points ?? []).map((p) => ({ t: p.t, value: p[metric] })));
 
@@ -171,6 +227,30 @@
         />
       {/if}
     </section>
+
+    <section class="split">
+      <div class="card">
+        <h2>{metricLabel} by project</h2>
+        <p class="muted small sub">Last {range.label}</p>
+        {#if byProject}
+          <RankedBars rows={projectRows} format={metricFormat} stale={breakdownLoading} />
+          {#if namesLocked}
+            <p class="muted small note">Project names are end-to-end encrypted. Unlock them on the <a href="/activity">Activity</a> page.</p>
+          {/if}
+        {:else}
+          <p class="muted small">Loading…</p>
+        {/if}
+      </div>
+      <div class="card">
+        <h2>{metricLabel} by model</h2>
+        <p class="muted small sub">Last {range.label}</p>
+        {#if byModel}
+          <RankedBars rows={modelRows} format={metricFormat} stale={breakdownLoading} />
+        {:else}
+          <p class="muted small">Loading…</p>
+        {/if}
+      </div>
+    </section>
   {:else}
     <p class="muted">Loading data…</p>
   {/if}
@@ -178,6 +258,11 @@
 
 <style>
   .cal { margin-bottom: 16px; }
+  .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+  .split > .card { min-width: 0; }
+  .split h2 { margin-bottom: 2px; }
+  .sub { margin-bottom: 14px !important; }
+  .note { margin-top: 12px !important; }
   .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
   .seg button { border: 0; background: none; padding: 6px 12px; color: var(--text-secondary); }
