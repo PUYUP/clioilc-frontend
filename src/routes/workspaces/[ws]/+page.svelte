@@ -15,7 +15,7 @@
    * @typedef {{ slug: string, name: string, role: string | null, can: { manage_projects: boolean, manage_members: boolean, delete: boolean, transfer: boolean } }} Workspace
    * @typedef {{ slug: string, name: string, git_remote: string, role: string | null, sources: number, can: { link: boolean, manage_access: boolean, manage: boolean } }} Project
    * @typedef {{ id: number, username: string, avatar_url: string | null, role: string }} Member
-   * @typedef {{ id: number, project: { slug: string, name: string } | null, role: string, github_login: string, invited_by: string | null, expires_at: string, url?: string }} Invite
+   * @typedef {{ id: number, project: { slug: string, name: string } | null, role: string, github_login: string, invited_by: string | null, expires_at: string, url?: string, emailed?: boolean }} Invite
    */
 
   const ROLES = ["owner", "admin", "member", "viewer"];
@@ -496,7 +496,13 @@
       <p class="muted small"><strong>{inviteRole}</strong>: {ROLE_HELP[/** @type {keyof typeof ROLE_HELP} */ (inviteRole)]}. Only that GitHub account can accept. The link works for 7 days.</p>
       {#if newInvite?.url}
         <div class="new-invite">
-          <p class="small">Send this link to <strong>@{newInvite.github_login}</strong>. It is shown only once.</p>
+          <p class="small">
+            {#if newInvite.emailed}
+              We emailed this link to <strong>@{newInvite.github_login}</strong>. You can also send it yourself; it is shown only once.
+            {:else}
+              Send this link to <strong>@{newInvite.github_login}</strong>. It is shown only once.
+            {/if}
+          </p>
           <div class="copy">
             <code>{newInvite.url}</code>
             <button class="btn" onclick={copyLink}>{copied ? "Copied" : "Copy"}</button>
