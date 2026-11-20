@@ -30,7 +30,7 @@ CSRF di backend bergantung pada origin ini.
 | Path | Isi |
 |---|---|
 | `/` | Kalender 53 minggu ala GitHub untuk **Succeeded** (tool berhasil) dan **Failed** (tool error + pesan gagal), klik satu hari untuk membuka aktivitasnya. Di bawahnya dashboard: Rentang 24 jam / 7 / 30 / 90 hari, per jam (sampai 7 hari) atau per hari, pilihan metrik (default: Cost), lima angka ringkasan, grafik kolom dengan tooltip (mouse atau panah kiri/kanan), dan tampilan tabel |
-| `/activity?date=YYYY-MM-DD` | Timeline aktivitas satu hari: prompt, balasan agent, thinking (opsional), dan aksi tool dengan status dan pesan error, dikelompokkan per sesi seperti `clioilc activity`. Ada filter project, pencarian teks, filter **jenis** (You / Agent / Tool) dan **status** (All / Succeeded / Error, untuk tool dan balasan agent), serta biaya per balasan dan per sesi. Filter jenis dan status disimpan di URL (`?type=prompt,tool&status=error`). Klik kotak di baris Failed pada kalender akan membuka hari itu dengan filter Error aktif. Bisa dibuka dari klik batang grafik di dashboard |
+| `/activity?date=YYYY-MM-DD` | Timeline aktivitas satu hari: prompt, balasan agent, thinking (opsional), dan aksi tool dengan status dan pesan error, dikelompokkan per sesi seperti `clioilc activity`. Ada filter project, pencarian teks, filter **jenis** (You / Agent / Tool) dan **status** (All / Succeeded / Error, untuk tool dan balasan agent), serta biaya per balasan dan per sesi. Urutannya terbaru di atas, baik untuk sesi maupun entri di dalamnya. Tombol "Oldest first" membaliknya (`?order=asc`). Filter jenis dan status disimpan di URL (`?type=prompt,tool&status=error`). Klik kotak di baris Failed pada kalender akan membuka hari itu dengan filter Error aktif. Bisa dibuka dari klik batang grafik di dashboard |
 | `/device?code=…` | Menyetujui atau menolak `clioilc login`. Kode boleh huruf kecil dan tanpa tanda strip |
 | `/auth/callback` | Tujuan setelah login GitHub. Mengecek session, lalu kembali ke `next` |
 | `/login/error` | Tujuan saat login gagal (dipakai allauth) |
@@ -42,6 +42,13 @@ jumlahnya ditampilkan di bawah angka Cost.
 
 Grafik memakai data publik dari `GET /api/v1/usage/report/` (`by=hour` atau `by=day`) dengan
 zona waktu browser. Jam atau hari tanpa aktivitas diisi nol di sisi frontend. Timeline memakai `GET /api/v1/usage/activity/`.
+
+**Markdown:** balasan agent dan thinking dirender sebagai markdown (`src/lib/markdown.js`:
+marked + DOMPurify). Karena isinya berasal dari log, HTML mentah ditampilkan sebagai teks
+(misalnya `<tool_use_error>`), gambar tidak dimuat, hanya link `http(s)` yang menjadi link
+(dibuka di tab baru, `rel="noopener noreferrer nofollow"`), dan hasil akhirnya disaring lagi
+dengan DOMPurify. Link ke file lokal (`src/x.rs#L10`) ditampilkan sebagai teks, dengan
+path-nya di tooltip. Prompt dari user tetap ditampilkan sebagai teks biasa.
 
 **Akun end-to-end:** halaman aktivitas meminta passphrase, lalu mendekripsi di browser
 (`src/lib/e2e.js`: Argon2id lewat hash-wasm, AES-256-GCM lewat WebCrypto, format v1 dari
@@ -63,6 +70,7 @@ src/lib/CalendarHeatmap.svelte  kalender berhasil/error 53 minggu
 src/lib/format.js           format angka, mata uang, dan waktu (id-ID, zona browser)
 src/lib/activity.js         ambil activity, dekripsi, susun timeline per sesi
 src/lib/e2e.js              dekripsi e2e (format v1)
+src/lib/markdown.js         render markdown yang aman (marked + DOMPurify)
 src/lib/vault.svelte.js     data key e2e di memori tab
 src/app.css                 token warna terang/gelap
 src/routes/                 halaman

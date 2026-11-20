@@ -4,6 +4,7 @@
   import { ApiError } from "$lib/api.js";
   import { LockedError, groupBySession, loadActivity, shortProject } from "$lib/activity.js";
   import { isoDate, timeZone, usd } from "$lib/format.js";
+  import { renderMarkdown } from "$lib/markdown.js";
   import Login from "$lib/Login.svelte";
   import { session } from "$lib/session.svelte.js";
   import { unlockVault, vault } from "$lib/vault.svelte.js";
@@ -111,7 +112,12 @@
       );
     });
   });
-  const groups = $derived(data ? groupBySession(visible, data.messages) : []);
+  // Newest first by default (sessions and the entries inside them);
+  // ?order=asc reads the day from its start.
+  const oldestFirst = $derived(page.url.searchParams.get("order") === "asc");
+  const groups = $derived(
+    data ? groupBySession(oldestFirst ? visible : [...visible].reverse(), data.messages) : [],
+  );
   const projectOptions = $derived(
     data
       ? [...new Set(data.items.map((i) => i.projectId).filter((p) => p !== null))].map((id) => ({
@@ -234,6 +240,14 @@
       {#if status !== "all"}
         <span class="muted small">Prompts have no status, so they are hidden.</span>
       {/if}
+      <button
+        class="btn order"
+        onclick={() => setParams({ order: oldestFirst ? null : "asc" })}
+        title="Change the order of sessions and entries"
+      >
+        <span aria-hidden="true">{oldestFirst ? "↑" : "↓"}</span>
+        {oldestFirst ? "Oldest first" : "Newest first"}
+      </button>
     </div>
 
     <div class:stale={loading}>
@@ -288,7 +302,12 @@
                     <span class="muted">This entry cannot be opened (corrupt, or the key does not match).</span>
                   {:else}
                     {@const long = item.text.length > LONG}
-                    <p class="text" class:clamped={long && !expanded.has(item.id)}>{item.text}</p>
+                    {#if item.kind === "prompt"}
+                      <p class="text" class:clamped={long && !expanded.has(item.id)}>{item.text}</p>
+                    {:else}
+                      <!-- renderMarkdown escapes raw HTML and sanitizes with DOMPurify -->
+                      <div class="md" class:faded={long && !expanded.has(item.id)}>{@html renderMarkdown(item.text)}</div>
+                    {/if}
                     {#if long}
                       <button class="more" onclick={() => toggle(item.id)}>
                         {expanded.has(item.id) ? "Show less" : "Show more"}
@@ -331,6 +350,7 @@
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
   .filters input[type="search"] { flex: 1 1 200px; }
   .filters select { max-width: 100%; }
+  .order { margin-left: auto; padding: 6px 12px; font-size: 14px; }
   .check { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
   .seg button { border: 0; background: none; padding: 6px 12px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
@@ -365,9 +385,38 @@
   .prompt .tag { color: var(--text-primary); font-weight: 600; }
   .sub { font-size: 11px; color: var(--text-muted); }
   .prompt { background: var(--ghost); }
-  .thinking .text { color: var(--text-secondary); font-style: italic; }
-  .text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+  /* p.text only: list items also carry the kind ("text") as a class. */
+  p.text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
   .clamped { display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Rendered markdown (agent replies, thinking). */
+  .md { font-size: 14px; overflow-wrap: anywhere; white-space: normal; }
+  .md.faded {
+    max-height: 9em;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
+    mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  }
+  .thinking .md { color: var(--text-secondary); }
+  .md :global(> :first-child) { margin-top: 0; }
+  .md :global(> :last-child) { margin-bottom: 0; }
+  .md :global(p), .md :global(ul), .md :global(ol), .md :global(pre), .md :global(blockquote), .md :global(table) { margin: 0 0 8px; }
+  .md :global(h1), .md :global(h2), .md :global(h3), .md :global(h4) { font-size: 14px; font-weight: 650; margin: 12px 0 6px; }
+  .md :global(h1), .md :global(h2) { font-size: 15px; }
+  .md :global(ul), .md :global(ol) { padding-left: 20px; }
+  .md :global(li + li) { margin-top: 2px; }
+  /* Loose lists (blank lines between items) wrap items in <p>: keep them tight. */
+  .md :global(li > p) { margin: 0; }
+  .md :global(li > p + p), .md :global(li > p + ul), .md :global(li > p + ol) { margin-top: 4px; }
+  .md :global(code) { background: var(--ghost); border-radius: 4px; padding: 1px 4px; font-size: 12.5px; }
+  .md :global(pre) { background: var(--ghost); border-radius: 6px; padding: 8px 10px; overflow-x: auto; }
+  .md :global(pre code) { background: none; padding: 0; white-space: pre; overflow-wrap: normal; }
+  .md :global(blockquote) { border-left: 3px solid var(--grid); padding-left: 10px; color: var(--text-secondary); }
+  .md :global(table) { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; }
+  .md :global(th), .md :global(td) { border: 1px solid var(--grid); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .md :global(th) { background: var(--ghost); font-weight: 600; }
+  .md :global(a) { color: var(--accent); }
+  .md :global(.md-ref) { text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
+  .md :global(hr) { border: 0; border-top: 1px solid var(--grid); margin: 10px 0; }
   .more { border: 0; background: none; padding: 2px 0; color: var(--accent); font-size: 13px; }
   .meta { font-size: 12px; margin-top: 2px; }
   .toolline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
