@@ -23,7 +23,7 @@
     </div>
     {#if session.user}
       <div class="user">
-        <span class="muted username">{session.user.username}</span>
+        <a class="username" href="/account" aria-current={page.url.pathname.startsWith("/account") ? "page" : undefined} title="Account">{session.user.username}</a>
         <button class="btn" onclick={logout}>Sign out</button>
       </div>
     {/if}
@@ -52,6 +52,8 @@
   nav a[aria-current="page"] { color: var(--text-primary); font-weight: 600; background: var(--ghost); }
   .user { display: flex; align-items: center; gap: 12px; }
   .user .btn { white-space: nowrap; }
+  .username { color: var(--text-secondary); text-decoration: none; font-size: 14px; padding: 6px 8px; border-radius: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .username:hover, .username[aria-current="page"] { background: var(--ghost); color: var(--text-primary); }
   @media (max-width: 520px) {
     /* Two rows: brand + sign out, then the nav. */
     .bar {
@@ -67,7 +69,7 @@
     .brand { grid-area: brand; align-self: center; }
     nav { grid-area: nav; margin-left: -8px; }
     .user { grid-area: user; }
-    .username { display: none; }
+    .username { max-width: 40vw; }
     .user .btn { padding: 6px 10px; font-size: 13px; }
   }
   main.wrap { padding-top: 24px; padding-bottom: 48px; }
