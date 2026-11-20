@@ -100,6 +100,6 @@ SPA. Bisa dilayani dari CDN atau static host mana pun. Pastikan semua path yang 
 dikenal diarahkan ke `index.html`.
 
 - Atur `PUBLIC_API_URL` **saat build**, karena nilainya ditanam ke dalam bundle.
-- Frontend dan API harus satu site, misalnya `app.example.com` dan `api.example.com`.
-  Di backend, isi `COOKIE_DOMAIN=.example.com`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`,
+- Frontend dan API harus satu site, misalnya `dash.clioilc.com` dan `api.clioilc.com`.
+  Di backend, isi `COOKIE_DOMAIN=.clioilc.com`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`,
   dan `CSRF_TRUSTED_ORIGINS` dengan origin frontend.
