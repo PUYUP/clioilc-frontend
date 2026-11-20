@@ -19,7 +19,8 @@
   let locked = $state(false);
   let error = $state(/** @type {string | null} */ (null));
 
-  let project = $state("");
+  // Initial project from ?project= (links from the Digest page).
+  let project = $state(page.url.searchParams.get("project") ?? "");
   let query = $state("");
   let passphrase = $state("");
   /** @type {Set<string>} */

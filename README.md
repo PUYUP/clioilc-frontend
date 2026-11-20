@@ -31,6 +31,7 @@ CSRF di backend bergantung pada origin ini.
 |---|---|
 | `/` | Di bagian bawah: **biaya per project** dan **per model** (atau metrik lain yang dipilih) untuk rentang yang sama, sebagai bar berperingkat (8 teratas, sisanya digabung ke "Other"), dengan nilai dan persentase tertulis. Nama project dipendekkan dengan membuang awalan folder yang paling banyak dipakai (`-Volumes-SSD1-Private-app` menjadi `app`); nama lengkapnya ada di tooltip. Di atas: kalender 53 minggu ala GitHub untuk **Succeeded** (tool berhasil) dan **Failed** (tool error + pesan gagal), klik satu hari untuk membuka aktivitasnya. Di bawahnya dashboard: Rentang 24 jam / 7 / 30 / 90 hari, per jam (sampai 7 hari) atau per hari, pilihan metrik (default: Cost), lima angka ringkasan, grafik kolom dengan tooltip (mouse atau panah kiri/kanan), dan tampilan tabel |
 | `/activity?date=YYYY-MM-DD` | Timeline aktivitas satu hari: prompt, balasan agent, thinking, dan aksi tool dengan status dan pesan error, dikelompokkan per sesi seperti `clioilc activity`. Ada filter project, pencarian teks, filter **jenis** (You / Agent / Thinking / Tool; Thinking mati secara default, nyalakan sendiri untuk melihatnya di sela timeline, atau matikan yang lain untuk membaca thinking saja) dan **status** (All / Succeeded / Error, untuk tool dan balasan agent), serta biaya per balasan dan per sesi. Urutannya terbaru di atas, baik untuk sesi maupun entri di dalamnya. Tombol "Oldest first" membaliknya (`?order=asc`). Filter jenis dan status disimpan di URL (`?type=prompt,tool&status=error`). Klik kotak di baris Failed pada kalender akan membuka hari itu dengan filter Error aktif. Bisa dibuka dari klik batang grafik di dashboard |
+| `/digest?from=&to=` | Ringkasan harian ala changelog: per hari, per project, berisi prompt yang kamu tulis ("You asked"), commit yang dibuat (dan apakah di-push), file yang diubah, masalah (tool/pesan gagal, dengan link ke Activity yang sudah terfilter), sesi, perkiraan waktu aktif, dan biaya. Preset Today / Yesterday / Last 7 days, atau rentang bebas sampai 14 hari |
 | `/devices` | Daftar perangkat yang terhubung lewat `clioilc login`: nama, status **Active** (sync dalam 5 menit terakhir) atau **Idle**, waktu sync terakhir, jumlah pesan yang dikirim, pesan terbaru, dan kapan terhubung. **Revoke…** mencabut token perangkat setelah konfirmasi; perangkat itu langsung berhenti sync, data yang sudah terkirim tetap ada |
 | `/device?code=…` | Menyetujui atau menolak `clioilc login`. Kode boleh huruf kecil dan tanpa tanda strip |
 | `/auth/callback` | Tujuan setelah login GitHub. Mengecek session, lalu kembali ke `next` |
@@ -43,6 +44,20 @@ jumlahnya ditampilkan di bawah angka Cost.
 
 Grafik memakai data publik dari `GET /api/v1/usage/report/` (`by=hour` atau `by=day`) dengan
 zona waktu browser. Jam atau hari tanpa aktivitas diisi nol di sisi frontend. Timeline memakai `GET /api/v1/usage/activity/`.
+
+**Digest** disusun di browser dari data `activity/` yang sama (satu request per hari), jadi juga
+berlaku untuk akun e2e setelah passphrase dibuka. Tidak ada AI di dalamnya; semua yang tampil
+berasal langsung dari log:
+
+- **You asked:** baris pertama setiap prompt. Prompt subagent dan prompt bawaan harness
+  (misalnya ringkasan sesi lanjutan) tidak ditampilkan.
+- **Commits:** diambil dari perintah `git commit` yang berhasil di tool Bash. Pesannya dibaca
+  dari `-m "…"`, heredoc `-F - <<'EOF'`, atau `-m "$(cat <<'EOF' …)"`. Commit yang dibuat lewat
+  alias atau fungsi shell tidak terdeteksi.
+- **Files changed:** path dari Edit/Write yang berhasil, relatif terhadap folder project.
+  Scratchpad agent (`/tmp`) dan file di `~/.claude/` diabaikan.
+- **Waktu aktif:** jumlah jeda antar-entri dalam satu sesi. Jeda lebih dari 15 menit dianggap
+  idle.
 
 **Markdown:** balasan agent dan thinking dirender sebagai markdown (`src/lib/markdown.js`:
 marked + DOMPurify). Karena isinya berasal dari log, HTML mentah ditampilkan sebagai teks
@@ -68,6 +83,7 @@ src/lib/session.svelte.js   status login (allauth headless), loginWithGitHub, lo
 src/lib/usage.js            ambil report, isi jam/hari kosong, total
 src/lib/ColumnChart.svelte  grafik kolom SVG (tanpa library)
 src/lib/CalendarHeatmap.svelte  kalender berhasil/error 53 minggu
+src/lib/digest.js           susun digest harian dari activity (tanpa AI)
 src/lib/RankedBars.svelte   bar berperingkat (biaya per project / model)
 src/lib/format.js           format angka, mata uang, dan waktu (id-ID, zona browser)
 src/lib/activity.js         ambil activity, dekripsi, susun timeline per sesi

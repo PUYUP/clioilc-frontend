@@ -16,6 +16,7 @@
         <nav>
           <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Overview</a>
           <a href="/activity" aria-current={page.url.pathname.startsWith("/activity") ? "page" : undefined}>Activity</a>
+          <a href="/digest" aria-current={page.url.pathname.startsWith("/digest") ? "page" : undefined}>Digest</a>
           <a href="/devices" aria-current={page.url.pathname.startsWith("/devices") ? "page" : undefined}>Devices</a>
         </nav>
       {/if}
