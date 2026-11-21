@@ -145,8 +145,39 @@
     return `/activity?${q}`;
   }
   const PROMPTS = 5;
+  const RUNS = 12;
+  /** "Run tests: cargo test" -> { what: "Run tests", command: "cargo test" }. @param {string} text */
+  const splitRun = (text) => {
+    const m = /^([^:]{3,80}):\s+(.+)$/.exec(text);
+    // A description reads like a sentence: capital first, no shell syntax.
+    return m && /^\p{Lu}/u.test(m[1]) && !/[$|`;<>]/.test(m[1]) ? { what: m[1], command: m[2] } : { what: "", command: text };
+  };
   const FILES = 8;
 </script>
+
+{#snippet runsBranch(/** @type {import("$lib/digest.js").Turn} */ t, /** @type {string} */ key)}
+  <button class="toggle" aria-expanded={open.has(key)} onclick={() => toggle(key)}>
+    <span aria-hidden="true">{open.has(key) ? "▾" : "▸"}</span>
+    {count(t.commands, "command")}{#if t.failed}{" · "}<span class="err">{t.failed} failed</span>{/if}
+  </button>
+  {#if open.has(key)}
+    <ul class="tree runs">
+      {#each open.has(`${key}:all`) ? t.runs : t.runs.slice(0, RUNS) as r, j (j)}
+        {@const split = splitRun(r.text)}
+        <li class:failed={r.failed} title={r.text}>
+          <time>{clock(r.ts)}</time>
+          {#if r.failed}<span class="err" aria-label="failed">✕</span>{/if}
+          {#if r.tool !== "Bash"}<span class="tool">{r.tool}</span>{/if}
+          {#if split.what}<span class="what">{split.what}</span>{/if}
+          <code>{split.command || "(no description)"}</code>
+        </li>
+      {/each}
+    </ul>
+    {#if t.runs.length > RUNS}
+      <button class="more" onclick={() => toggle(`${key}:all`)}>{open.has(`${key}:all`) ? "Show less" : `+${t.runs.length - RUNS} more`}</button>
+    {/if}
+  {/if}
+{/snippet}
 
 {#snippet commitLine(/** @type {import("$lib/digest.js").CommitLine} */ c)}
   {@const url = c.commit ? commitUrl(c.commit) : null}
@@ -239,13 +270,15 @@
                     {#each open.has(`${id}:prompts`) ? p.turns : p.turns.slice(0, PROMPTS) as t, k (k)}
                       <li class="turn">
                         <div class="q">
-                          <span class="node" aria-hidden="true"></span>
+                          <span class="node" class:fail={t.failed > 0} title={t.failed ? `${t.failed} failed` : undefined} aria-hidden="true"></span>
                           <time datetime={t.ts.toISOString()}>{clock(t.ts)}</time>
                           <span class="msg">{t.text}</span>
                         </div>
                         {#if t.commits.length}
                           <ul class="tree commits">
                             {#each t.commits as c, j (j)}{@render commitLine(c)}{/each}
+                            <!-- With commits, the commands only when something failed. -->
+                            {#if t.failed}<li class="outcome">{@render runsBranch(t, `${id}:runs:${k}`)}</li>{/if}
                           </ul>
                         {:else if t.committedLater || t.edited || t.commands || t.failed}
                           <ul class="tree">
@@ -259,11 +292,8 @@
                               <li class="outcome warn">
                                 ✎ {count(t.edited, "file")} changed{#if t.uncommitted != null}, {t.uncommitted ? "not committed" : "committed"}{/if}
                               </li>
-                            {:else}
-                              <li class="outcome">
-                                {count(t.commands, "command")}{#if t.failed}{" · "}<span class="err">{t.failed} failed</span>{/if}
-                              </li>
                             {/if}
+                            {#if t.runs.length}<li class="outcome">{@render runsBranch(t, `${id}:runs:${k}`)}</li>{/if}
                           </ul>
                         {/if}
                       </li>
@@ -357,16 +387,33 @@
   .prompts { list-style: none; padding-left: 0; }
   /* Turns as a folder tree: the prompt is the parent, its commits (or what
      the turn did) the children, joined by ├─ / └─ lines. */
-  .prompts { display: grid; gap: 10px; }
-  .prompts > li { color: var(--text-primary); }
+  .prompts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .prompts > li { color: var(--text-primary); min-width: 0; }
   .prompts .q { display: flex; gap: 8px; align-items: baseline; }
   .node { flex: none; width: 8px; height: 8px; border-radius: 2px; border: 1.5px solid var(--text-muted); transform: translateY(-1px); }
+  /* Something in this turn failed. */
+  .node.fail { border-color: var(--critical); background: var(--critical); }
   .tree { list-style: none; margin: 2px 0 0 3px; padding: 0; font-size: 13px; }
   .tree > li { position: relative; padding: 3px 0 3px 22px; margin: 0; }
   .tree > li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--border); }
   .tree > li:last-child::before { bottom: auto; height: calc(3px + 0.8em); }
   .tree > li::after { content: ""; position: absolute; left: 0; top: calc(3px + 0.8em); width: 14px; border-top: 1px solid var(--border); }
   .outcome { font-size: 12.5px; color: var(--text-secondary); }
+  .outcome .toggle { border: 0; background: none; padding: 0; font: inherit; color: var(--text-secondary); cursor: pointer; text-align: left; }
+  .outcome .toggle:hover { color: var(--text-primary); }
+  .runs { margin-top: 2px; max-width: 100%; overflow: hidden; }
+  /* One line per command: time, what it was for, the command (cut, full on hover). */
+  ul.runs > li { display: flex; flex-wrap: nowrap; gap: 6px; align-items: baseline; min-width: 0; white-space: nowrap; }
+  .runs time { color: var(--text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none; }
+  ul.runs .what { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+  .runs code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; background: none; padding: 0; color: var(--text-muted); }
+  .runs .failed .what, .runs .failed code { color: var(--critical); }
+  @media (max-width: 560px) {
+    /* Narrow: what each command was for; the command itself on hover/long-press. */
+    ul.runs .what { max-width: none; flex: 1 1 auto; min-width: 0; }
+    ul.runs .what + code { display: none; }
+  }
+  .runs .tool { font-size: 11.5px; font-weight: 600; flex: none; }
   .outcome code { font-size: 12px; }
   .outcome.warn { color: var(--text-primary); }
   .outcome .err { color: var(--critical); }

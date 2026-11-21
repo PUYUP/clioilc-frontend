@@ -230,6 +230,13 @@ describe("turns", () => {
     expect(t["do B"]).toMatchObject({ edited: 2, uncommitted: 1 }); // b.rs never committed
     expect(t["commit it"].commits).toHaveLength(1);
     expect(t["run the tests"]).toMatchObject({ commands: 1, failed: 1 });
+    // The commands themselves, in order, failures included.
+    expect(t["run the tests"].runs.map((r) => [r.text, r.failed])).toEqual([
+      ["cargo test", false],
+      ["cargo test", true],
+    ]);
+    // Commands that made a commit are not listed again.
+    expect(t["commit it"].runs).toEqual([]);
     expect(t["half done"]).toMatchObject({ edited: 1, uncommitted: 1, committedLater: null });
   });
 

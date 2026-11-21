@@ -33,7 +33,10 @@
  *   uncommitted: number | null,
  *   commands: number,
  *   failed: number,
+ *   runs: Run[],
  * }} Turn
+ * @typedef {{ ts: Date, tool: string, text: string, failed: boolean }} Run
+ *   A command the turn ran (not one that made a commit), or any action that failed.
  *   One prompt and what the agent did for it, up to the next prompt of the
  *   same session. `committedLater`: a later commit that holds files edited
  *   here; `uncommitted`: files edited here that no commit holds (null when
@@ -110,7 +113,7 @@ function projectDigest(projectId, name, items, messages) {
 
   // Turns: each human prompt opens one in its session; the actions after it
   // (commits, edits, commands) belong to it until the session's next prompt.
-  /** @type {{ ts: Date, text: string, commits: CommitLine[], edits: Map<string, number>, commands: number, failed: number }[]} */
+  /** @type {{ ts: Date, text: string, commits: CommitLine[], edits: Map<string, number>, commands: number, failed: number, runs: Run[] }[]} */
   const turns = [];
   /** Session -> index of its current turn. @type {Map<string, number>} */
   const current = new Map();
@@ -140,7 +143,7 @@ function projectDigest(projectId, name, items, messages) {
     if (i.kind === "prompt" && !i.isSubagent) {
       const line = promptLine(i.text);
       if (line) {
-        turns.push({ ts: i.ts, text: line, commits: [], edits: new Map(), commands: 0, failed: 0 });
+        turns.push({ ts: i.ts, text: line, commits: [], edits: new Map(), commands: 0, failed: 0, runs: [] });
         current.set(i.sessionId ?? "", turns.length - 1);
       }
       continue;
@@ -155,7 +158,10 @@ function projectDigest(projectId, name, items, messages) {
     const { name: tool, status } = i.tool;
     if (status === "error") {
       toolErrors++;
-      if (turn) turn.failed++;
+      if (turn) {
+        turn.failed++;
+        turn.runs.push({ ts: i.ts, tool, text: runText(i.text), failed: true });
+      }
       failing.set(tool, (failing.get(tool) ?? 0) + 1);
       continue;
     }
@@ -170,7 +176,10 @@ function projectDigest(projectId, name, items, messages) {
       }
       const msg = found.length || trackerCommits ? null : commitMessage(i.text);
       if (msg && !commits.some((c) => c.message === msg)) addCommit({ message: msg, ts: i.ts });
-      if (!found.length && !msg && turn) turn.commands++;
+      if (!found.length && !msg && turn) {
+        turn.commands++;
+        turn.runs.push({ ts: i.ts, tool, text: runText(i.text), failed: false });
+      }
       if (/\bgit\s+push\b/.test(i.text)) pushed = true;
     } else if (EDIT_TOOLS.has(tool) && isProjectFile(i.text)) {
       files.set(i.text, (files.get(i.text) ?? 0) + 1);
@@ -226,6 +235,7 @@ function projectDigest(projectId, name, items, messages) {
     uncommitted: known ? [...t.edits.keys()].filter(isUncommitted).length : null,
     commands: t.commands,
     failed: t.failed,
+    runs: t.runs,
   }));
 
   return {
@@ -253,6 +263,12 @@ function projectDigest(projectId, name, items, messages) {
     first: items[0].ts,
     last: items[items.length - 1].ts,
   };
+}
+
+/** One line of a command's summary ("Run tests: cargo test …"). @param {string} text */
+function runText(text) {
+  const line = text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
 }
 
 /** First meaningful line of a prompt; null for harness noise. @param {string} text */
