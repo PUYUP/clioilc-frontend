@@ -4,8 +4,44 @@
   import { api, ApiError } from "$lib/api.js";
   import { session } from "$lib/session.svelte.js";
   import Login from "$lib/Login.svelte";
+  import { keyCheck, sealForDevice } from "$lib/handoff.js";
+  import { listPasskeys, passkeysAvailable, unlockWithPasskey } from "$lib/passkey.js";
+  import { isE2EAccount, loadMe } from "$lib/team.svelte.js";
 
-  /** @typedef {{ user_code: string, name: string, status: string, expires_at: string }} Authorization */
+  /** @typedef {{ user_code: string, name: string, status: string, expires_at: string, e2e_pubkey: string | null }} Authorization */
+
+  // E2E accounts: hand the new machine the data key so it asks no passphrase.
+  let check = $state(/** @type {string | null} */ (null));
+  let handoff = $state(true);
+  let matches = $state(false);
+  let passphrase = $state("");
+  let usePassphrase = $state(false);
+  /** @type {import("$lib/passkey.js").Passkey[]} */
+  let passkeys = $state([]);
+  $effect(() => {
+    if (session.user) loadMe().catch(() => {});
+  });
+  $effect(() => {
+    const pub = auth?.e2e_pubkey;
+    check = null;
+    if (pub && isE2EAccount()) {
+      keyCheck(pub).then((c) => (check = c));
+      if (passkeysAvailable()) listPasskeys().then((l) => (passkeys = l));
+    }
+  });
+  const offerHandoff = $derived(!!check && isE2EAccount());
+
+  /** The data key's bytes: from a passkey, else the passphrase. */
+  async function dataKeyBytes() {
+    if (passkeys.length && !usePassphrase) return unlockWithPasskey(passkeys);
+    const { unlock } = await import("$lib/e2e.js");
+    const keyring = await api("/api/v1/users/keyring/");
+    try {
+      return (await unlock(keyring, passphrase)).raw;
+    } catch {
+      throw new Error("Wrong passphrase.");
+    }
+  }
 
   let code = $state(page.url.searchParams.get("code") ?? "");
   /** @type {Authorization | null} */
@@ -45,10 +81,21 @@
     phase = "loading";
     error = null;
     try {
-      await api(`${path(auth.user_code)}${decision}/`, { method: "POST" });
+      /** @type {Record<string, string> | undefined} */
+      let body;
+      if (decision === "approve" && offerHandoff && handoff && auth.e2e_pubkey) {
+        if (!matches) throw new Error("Confirm the key check first, or untick unlocking the terminal.");
+        const dek = await dataKeyBytes();
+        try {
+          body = await sealForDevice(auth.e2e_pubkey, dek, auth.user_code);
+        } finally {
+          dek.fill(0);
+        }
+      }
+      await api(`${path(auth.user_code)}${decision}/`, { method: "POST", body });
       phase = decision === "approve" ? "approved" : "denied";
     } catch (e) {
-      error = explain(e);
+      error = e instanceof Error && !(e instanceof ApiError) ? (e.name === "NotAllowedError" ? "Cancelled." : e.message) : explain(e);
       phase = "idle";
     }
   }
@@ -109,8 +156,31 @@
         Code <code>{auth.user_code}</code>. Only allow this if you just ran
         <code>clioilc login</code>.
       </p>
+      {#if offerHandoff}
+        <div class="handoff">
+          <label class="check">
+            <input type="checkbox" bind:checked={handoff} />
+            <span>Also unlock end-to-end data on that machine, so it does not ask for the passphrase</span>
+          </label>
+          {#if handoff}
+            <p class="small">Key check: <code class="kc">{check}</code></p>
+            <label class="check">
+              <input type="checkbox" bind:checked={matches} />
+              <span>The terminal shows exactly this key check</span>
+            </label>
+            {#if !passkeys.length || usePassphrase}
+              <input class="input" type="password" bind:value={passphrase} autocomplete="current-password" placeholder="Your passphrase (once, here)" aria-label="Passphrase" />
+            {:else}
+              <p class="muted small">
+                Your passkey is asked when you allow.
+                <button class="link" type="button" onclick={() => (usePassphrase = true)}>Use the passphrase instead</button>
+              </p>
+            {/if}
+          {/if}
+        </div>
+      {/if}
       <div class="actions">
-        <button class="btn primary" disabled={phase === "loading"} onclick={() => decide("approve")}>Allow</button>
+        <button class="btn primary" disabled={phase === "loading" || (offerHandoff && handoff && (!matches || ((!passkeys.length || usePassphrase) && !passphrase)))} onclick={() => decide("approve")}>Allow</button>
         <button class="btn" disabled={phase === "loading"} onclick={() => decide("deny")}>Deny</button>
       </div>
     {/if}
@@ -137,4 +207,11 @@
   }
   .device { font-size: 17px; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .handoff { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border-radius: 8px; background: var(--ghost); }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+  .check input { margin-top: 3px; width: auto; flex: none; padding: 0; min-width: 0; }
+  .handoff .input { width: 100%; box-sizing: border-box; text-transform: none; letter-spacing: normal; font-family: inherit; font-size: 15px; }
+  .small { font-size: 13px; margin: 0; }
+  .kc { font-size: 14px; letter-spacing: 0.04em; }
+  .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
 </style>
