@@ -3,7 +3,7 @@
 // Team rows come from other people's machines, so the shape is checked here
 // and only known hosts get a link.
 
-/** @typedef {{ hash: string, branch: string | null, subject: string, remote: string | null }} Commit */
+/** @typedef {{ hash: string, branch: string | null, subject: string, remote: string | null, files?: number, insertions?: number, deletions?: number }} Commit */
 
 const HASH = /^[0-9a-f]{7,64}$/;
 const REMOTE = /^[a-z0-9.-]+(\/[^\s/]+)+$/;
@@ -20,9 +20,16 @@ export function commitsOf(raw) {
       branch: typeof c.branch === "string" && c.branch ? c.branch : null,
       subject: typeof c.subject === "string" ? c.subject : "",
       remote: typeof c.remote === "string" && REMOTE.test(c.remote) ? c.remote : null,
+      ...stats(c),
     });
   }
   return out;
+}
+
+/** Size of the change, when the tracker found the repository. @param {any} c */
+function stats(c) {
+  const n = (/** @type {unknown} */ v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+  return n(c.files) && n(c.insertions) && n(c.deletions) ? { files: c.files, insertions: c.insertions, deletions: c.deletions } : {};
 }
 
 /** Commit page on a known forge, from a normalized remote (`github.com/acme/api`). */

@@ -57,6 +57,7 @@
         <nav>
           <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Overview</a>
           <a href="/activity" aria-current={page.url.pathname.startsWith("/activity") ? "page" : undefined}>Activity</a>
+          <a href="/journal" aria-current={page.url.pathname.startsWith("/journal") ? "page" : undefined}>Journal</a>
           <a href="/digest" aria-current={page.url.pathname.startsWith("/digest") ? "page" : undefined}>Digest</a>
           <a href="/devices" aria-current={page.url.pathname.startsWith("/devices") ? "page" : undefined}>Devices</a>
         </nav>
@@ -113,7 +114,9 @@
     .brand-row { display: contents; }
     .brand { grid-area: brand; align-self: center; }
     .scope { grid-area: scope; max-width: none; width: 100%; }
-    nav { grid-area: nav; margin-left: -8px; }
+    /* Five links: tighter, and scrollable rather than wider than the screen. */
+    nav { grid-area: nav; margin-left: -8px; gap: 0; overflow-x: auto; min-width: 0; }
+    nav a { padding: 6px 8px; white-space: nowrap; }
     .user { grid-area: user; }
     .username { max-width: 40vw; }
     .user .btn { padding: 6px 10px; font-size: 13px; }
