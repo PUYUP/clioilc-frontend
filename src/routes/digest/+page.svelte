@@ -8,6 +8,7 @@
   import { commitUrl, shortHash } from "$lib/commits.js";
   import CommitFiles from "$lib/CommitFiles.svelte";
   import { buildDigest, duration } from "$lib/digest.js";
+  import { renderMarkdown } from "$lib/markdown.js";
   import { count, isoDate, timeZone, usd } from "$lib/format.js";
   import Login from "$lib/Login.svelte";
   import { session } from "$lib/session.svelte.js";
@@ -276,26 +277,31 @@
                           <time datetime={t.ts.toISOString()}>{clock(t.ts)}</time>
                           <span class="msg">{t.text}</span>
                         </div>
-                        {#if t.commits.length}
-                          <ul class="tree commits">
+                        {#if t.reply || t.commits.length || t.committedLater || t.edited || t.commands || t.failed}
+                          {@const rkey = `${id}:reply:${k}`}
+                          {@const long = !!t.reply && (t.reply.text.length > 280 || t.reply.text.split("\n").length > 4)}
+                          <ul class="tree" class:commits={t.commits.length > 0}>
+                            {#if t.reply}
+                              <li class="reply">
+                                <span class="who">Agent</span>
+                                <div class="md" class:faded={long && !open.has(rkey)}>{@html renderMarkdown(t.reply.text)}</div>
+                                {#if long}<button class="more" onclick={() => toggle(rkey)}>{open.has(rkey) ? "Show less" : "Show more"}</button>{/if}
+                              </li>
+                            {/if}
                             {#each t.commits as c, j (j)}{@render commitLine(c)}{/each}
-                            <!-- With commits, the commands only when something failed. -->
-                            {#if t.failed}<li class="outcome">{@render runsBranch(t, `${id}:runs:${k}`)}</li>{/if}
-                          </ul>
-                        {:else if t.committedLater || t.edited || t.commands || t.failed}
-                          <ul class="tree">
-                            {#if t.committedLater}
+                            {#if !t.commits.length && t.committedLater}
                               <li class="outcome">
                                 {count(t.edited, "file")} changed · committed at {clock(t.committedLater.ts)}{#if t.committedLater.commit}{" · "}<code
                                   >{shortHash(t.committedLater.commit.hash)}</code
                                   >{/if}{#if t.uncommitted}{" · "}{t.uncommitted} still not committed{/if}
                               </li>
-                            {:else if t.edited}
+                            {:else if !t.commits.length && t.edited}
                               <li class="outcome warn">
                                 ✎ {count(t.edited, "file")} changed{#if t.uncommitted != null}, {t.uncommitted ? "not committed" : "committed"}{/if}
                               </li>
                             {/if}
-                            {#if t.runs.length}<li class="outcome">{@render runsBranch(t, `${id}:runs:${k}`)}</li>{/if}
+                            <!-- With commits, the commands only when something failed. -->
+                            {#if t.runs.length && (!t.commits.length || t.failed)}<li class="outcome">{@render runsBranch(t, `${id}:runs:${k}`)}</li>{/if}
                           </ul>
                         {/if}
                       </li>
@@ -401,6 +407,30 @@
   .tree > li:last-child::before { bottom: auto; height: calc(3px + 0.8em); }
   .tree > li::after { content: ""; position: absolute; left: 0; top: calc(3px + 0.8em); width: 14px; border-top: 1px solid var(--border); }
   .outcome { font-size: 12.5px; color: var(--text-secondary); }
+  /* The agent's answer: first branch of the turn, cut to a few lines. */
+  ul.tree > li.reply { display: block; }
+  .reply .who { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px; }
+  .md { font-size: 13.5px; overflow-wrap: anywhere; white-space: normal; color: var(--text-primary); }
+  .md.faded {
+    max-height: 4.8em;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  }
+  .md :global(> :first-child) { margin-top: 0; }
+  .md :global(> :last-child) { margin-bottom: 0; }
+  .md :global(p), .md :global(ul), .md :global(ol), .md :global(pre), .md :global(blockquote), .md :global(table) { margin: 0 0 6px; }
+  .md :global(h1), .md :global(h2), .md :global(h3), .md :global(h4) { font-size: 13.5px; font-weight: 650; margin: 10px 0 4px; }
+  .md :global(ul), .md :global(ol) { padding-left: 20px; }
+  .md :global(li) { margin: 1px 0; }
+  .md :global(li > p) { margin: 0; }
+  .md :global(code) { background: var(--ghost); border-radius: 4px; padding: 1px 4px; font-size: 12px; }
+  .md :global(pre) { background: var(--ghost); border-radius: 6px; padding: 8px 10px; overflow-x: auto; }
+  .md :global(pre code) { background: none; padding: 0; white-space: pre; overflow-wrap: normal; }
+  .md :global(blockquote) { border-left: 3px solid var(--grid); padding-left: 10px; color: var(--text-secondary); }
+  .md :global(table) { border-collapse: collapse; display: block; overflow-x: auto; font-size: 12.5px; }
+  .md :global(th), .md :global(td) { border: 1px solid var(--grid); padding: 3px 6px; text-align: left; vertical-align: top; }
+  .md :global(a) { color: var(--accent); }
   .outcome .toggle { border: 0; background: none; padding: 0; font: inherit; color: var(--text-secondary); cursor: pointer; text-align: left; }
   .outcome .toggle:hover { color: var(--text-primary); }
   .runs { margin-top: 2px; max-width: 100%; overflow: hidden; }

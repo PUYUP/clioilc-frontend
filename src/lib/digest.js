@@ -34,6 +34,7 @@
  *   commands: number,
  *   failed: number,
  *   runs: Run[],
+ *   reply: { text: string, ts: Date } | null,
  * }} Turn
  * @typedef {{ ts: Date, tool: string, text: string, failed: boolean }} Run
  *   A command the turn ran (not one that made a commit), or any action that failed.
@@ -113,7 +114,7 @@ function projectDigest(projectId, name, items, messages) {
 
   // Turns: each human prompt opens one in its session; the actions after it
   // (commits, edits, commands) belong to it until the session's next prompt.
-  /** @type {{ ts: Date, text: string, commits: CommitLine[], edits: Map<string, number>, commands: number, failed: number, runs: Run[] }[]} */
+  /** @type {{ ts: Date, text: string, commits: CommitLine[], edits: Map<string, number>, commands: number, failed: number, runs: Run[], reply: { text: string, ts: Date } | null }[]} */
   const turns = [];
   /** Session -> index of its current turn. @type {Map<string, number>} */
   const current = new Map();
@@ -143,9 +144,16 @@ function projectDigest(projectId, name, items, messages) {
     if (i.kind === "prompt" && !i.isSubagent) {
       const line = promptLine(i.text);
       if (line) {
-        turns.push({ ts: i.ts, text: line, commits: [], edits: new Map(), commands: 0, failed: 0, runs: [] });
+        turns.push({ ts: i.ts, text: line, commits: [], edits: new Map(), commands: 0, failed: 0, runs: [], reply: null });
         current.set(i.sessionId ?? "", turns.length - 1);
       }
+      continue;
+    }
+    if (i.kind === "text" && !i.isSubagent && i.text.trim()) {
+      // The agent's answer: its last reply in the turn (earlier ones are
+      // progress notes on the way).
+      const t = turnOf(i);
+      if (t) t.reply = { text: i.text.trim(), ts: i.ts };
       continue;
     }
     if (i.kind !== "tool" || !i.tool) continue;
@@ -236,6 +244,7 @@ function projectDigest(projectId, name, items, messages) {
     commands: t.commands,
     failed: t.failed,
     runs: t.runs,
+    reply: t.reply,
   }));
 
   return {

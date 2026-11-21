@@ -240,6 +240,21 @@ describe("turns", () => {
     expect(t["half done"]).toMatchObject({ edited: 1, uncommitted: 1, committedLater: null });
   });
 
+  it("keeps the agent's last reply of each turn as its answer", () => {
+    /** @param {string} text @param {number} m @param {boolean} [sub] */
+    const reply = (text, m, sub = false) => ({ id: text, ts: at(m), kind: "text", text, projectId: "p1", sessionId: "s1", isSubagent: sub, status: "ok" });
+    const p = digest([
+      prompt("explain CSP", 1),
+      reply("Let me look.", 2),
+      reply("CSP limits which scripts run.", 3),
+      reply("subagent notes", 4, true),
+      prompt("ok thanks", 5),
+    ]);
+    const t = Object.fromEntries(p.turns.map((x) => [x.text, x]));
+    expect(t["explain CSP"].reply?.text).toBe("CSP limits which scripts run.");
+    expect(t["ok thanks"].reply).toBeNull();
+  });
+
   it("keeps commits whose prompt was asked the day before", () => {
     const p = digest([commit("ddddddd", 1, ["a.rs"]), prompt("next", 2)]);
     expect(p.earlierCommits.map((c) => c.message)).toEqual(["commit ddddddd"]);
