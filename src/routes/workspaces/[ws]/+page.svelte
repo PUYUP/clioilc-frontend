@@ -424,6 +424,13 @@
                 <span class="muted">(usage and tool actions are always shared)</span>
               </span>
             </label>
+            {#if e2e && shareText[p.slug]}
+              <p class="small muted share-confirm">
+                Each laptop sends text only after you confirm it there too:
+                <code>clioilc team share {ws.slug}/{p.slug} on</code>. Until then it shares usage and tool actions only.
+                Turning this off here stops every laptop.
+              </p>
+            {/if}
             {#if collaborators[p.slug]}
               {@const list = collaborators[p.slug] ?? []}
               <div class="collab">
@@ -660,6 +667,7 @@
   .link-hint { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
   .share { display: flex; gap: 8px; align-items: flex-start; color: var(--text-secondary); }
   .share input { margin-top: 2px; }
+  .share-confirm { margin: 0 0 0 28px; overflow-wrap: anywhere; }
   .confirm { background: var(--ghost); border-radius: 8px; padding: 10px 12px; }
   .confirm p { margin: 0 0 8px; }
   .collab { padding-left: 12px; border-left: 2px solid var(--border); }

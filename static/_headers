@@ -1,0 +1,11 @@
+# Response headers for hosts that read this file (Cloudflare Pages, Netlify).
+# The main Content-Security-Policy is a <meta> tag in each HTML page
+# (svelte.config.js); a header policy is enforced in addition to it, so this
+# one only adds what <meta> cannot set.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin

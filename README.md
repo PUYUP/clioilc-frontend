@@ -115,7 +115,15 @@ Hasil `npm run build` adalah file statis di `build/` dengan `index.html` sebagai
 SPA. Bisa dilayani dari CDN atau static host mana pun. Pastikan semua path yang tidak
 dikenal diarahkan ke `index.html`.
 
-- Atur `PUBLIC_API_URL` **saat build**, karena nilainya ditanam ke dalam bundle.
+- Atur `PUBLIC_API_URL` **saat build**, karena nilainya ditanam ke dalam bundle dan ke
+  Content Security Policy.
+- **CSP** (`svelte.config.js`) dipasang sebagai tag `<meta>` di `index.html`: hanya skrip
+  dashboard sendiri yang boleh jalan, dan `fetch` hanya ke `PUBLIC_API_URL`. Kalau dashboard
+  memuat sumber baru (gambar, font, API lain), tambahkan ke direktifnya. Kalau tidak, browser
+  akan memblokirnya.
+- `static/_headers` menambahkan header yang tidak bisa diatur lewat `<meta>`
+  (`frame-ancestors`, `nosniff`, dan lainnya). Cloudflare Pages dan Netlify membacanya
+  otomatis; di host lain, pasang header yang sama.
 - Frontend dan API harus satu site, misalnya `dash.clioilc.com` dan `api.clioilc.com`.
   Di backend, isi `COOKIE_DOMAIN=.clioilc.com`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`,
   dan `CSRF_TRUSTED_ORIGINS` dengan origin frontend.
