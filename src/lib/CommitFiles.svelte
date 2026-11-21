@@ -29,8 +29,12 @@
 
 <style>
   .toggle { border: 0; background: none; padding: 0; color: var(--accent); font-size: 12px; cursor: pointer; white-space: nowrap; }
-  .changes { flex: 1 1 100%; list-style: none; margin: 2px 0 4px; padding: 6px 10px; border-radius: 6px; background: var(--ghost); display: grid; gap: 2px; font-size: 12px; min-width: 0; }
-  .changes li { display: flex; justify-content: space-between; gap: 10px; min-width: 0; }
+  /* A folder-tree branch under the commit: ├─ path  +12 −3 */
+  .changes { flex: 1 1 100%; list-style: none; margin: 0 0 2px 10px; padding: 0; display: grid; font-size: 12px; min-width: 0; }
+  .changes li { position: relative; display: flex; justify-content: space-between; gap: 10px; min-width: 0; padding: 2px 0 2px 20px; }
+  .changes li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--border); }
+  .changes li:last-child::before { bottom: auto; height: calc(2px + 0.75em); }
+  .changes li::after { content: ""; position: absolute; left: 0; top: calc(2px + 0.75em); width: 12px; border-top: 1px solid var(--border); }
   .changes code { background: none; padding: 0; overflow-wrap: anywhere; min-width: 0; }
   .n { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .add { color: var(--good); }

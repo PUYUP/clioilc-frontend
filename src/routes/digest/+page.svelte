@@ -237,26 +237,34 @@
                   </h4>
                   <ul class="prompts">
                     {#each open.has(`${id}:prompts`) ? p.turns : p.turns.slice(0, PROMPTS) as t, k (k)}
-                      <li>
-                        <div class="q"><time datetime={t.ts.toISOString()}>{clock(t.ts)}</time> <span class="msg">{t.text}</span></div>
+                      <li class="turn">
+                        <div class="q">
+                          <span class="node" aria-hidden="true"></span>
+                          <time datetime={t.ts.toISOString()}>{clock(t.ts)}</time>
+                          <span class="msg">{t.text}</span>
+                        </div>
                         {#if t.commits.length}
-                          <ul class="commits sub">
+                          <ul class="tree commits">
                             {#each t.commits as c, j (j)}{@render commitLine(c)}{/each}
                           </ul>
-                        {:else if t.committedLater}
-                          <p class="outcome">
-                            → {count(t.edited, "file")} changed · committed at {clock(t.committedLater.ts)}{#if t.committedLater.commit}{" · "}<code
-                              >{shortHash(t.committedLater.commit.hash)}</code
-                              >{/if}{#if t.uncommitted}{" · "}{t.uncommitted} still not committed{/if}
-                          </p>
-                        {:else if t.edited}
-                          <p class="outcome warn">
-                            ✎ {count(t.edited, "file")} changed{#if t.uncommitted != null}, {t.uncommitted ? "not committed" : "committed"}{/if}
-                          </p>
-                        {:else if t.commands || t.failed}
-                          <p class="outcome">
-                            {count(t.commands, "command")}{#if t.failed}{" · "}<span class="err">{t.failed} failed</span>{/if}
-                          </p>
+                        {:else if t.committedLater || t.edited || t.commands || t.failed}
+                          <ul class="tree">
+                            {#if t.committedLater}
+                              <li class="outcome">
+                                {count(t.edited, "file")} changed · committed at {clock(t.committedLater.ts)}{#if t.committedLater.commit}{" · "}<code
+                                  >{shortHash(t.committedLater.commit.hash)}</code
+                                  >{/if}{#if t.uncommitted}{" · "}{t.uncommitted} still not committed{/if}
+                              </li>
+                            {:else if t.edited}
+                              <li class="outcome warn">
+                                ✎ {count(t.edited, "file")} changed{#if t.uncommitted != null}, {t.uncommitted ? "not committed" : "committed"}{/if}
+                              </li>
+                            {:else}
+                              <li class="outcome">
+                                {count(t.commands, "command")}{#if t.failed}{" · "}<span class="err">{t.failed} failed</span>{/if}
+                              </li>
+                            {/if}
+                          </ul>
                         {/if}
                       </li>
                     {/each}
@@ -347,11 +355,18 @@
   ul { margin: 0; padding-left: 18px; font-size: 14px; }
   li { margin: 2px 0; overflow-wrap: anywhere; }
   .prompts { list-style: none; padding-left: 0; }
-  .prompts { display: grid; gap: 6px; }
-  .prompts > li { color: var(--text-primary); display: grid; gap: 2px; }
+  /* Turns as a folder tree: the prompt is the parent, its commits (or what
+     the turn did) the children, joined by ├─ / └─ lines. */
+  .prompts { display: grid; gap: 10px; }
+  .prompts > li { color: var(--text-primary); }
   .prompts .q { display: flex; gap: 8px; align-items: baseline; }
-  .commits.sub { margin: 2px 0 2px 44px; font-size: 13px; }
-  .outcome { margin: 0 0 0 44px; font-size: 12.5px; color: var(--text-secondary); }
+  .node { flex: none; width: 8px; height: 8px; border-radius: 2px; border: 1.5px solid var(--text-muted); transform: translateY(-1px); }
+  .tree { list-style: none; margin: 2px 0 0 3px; padding: 0; font-size: 13px; }
+  .tree > li { position: relative; padding: 3px 0 3px 22px; margin: 0; }
+  .tree > li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--border); }
+  .tree > li:last-child::before { bottom: auto; height: calc(3px + 0.8em); }
+  .tree > li::after { content: ""; position: absolute; left: 0; top: calc(3px + 0.8em); width: 14px; border-top: 1px solid var(--border); }
+  .outcome { font-size: 12.5px; color: var(--text-secondary); }
   .outcome code { font-size: 12px; }
   .outcome.warn { color: var(--text-primary); }
   .outcome .err { color: var(--critical); }
