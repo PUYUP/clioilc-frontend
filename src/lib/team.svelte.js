@@ -2,7 +2,7 @@
 // teammates I verified (pins), and the team keys I can open. Keys live in
 // memory only, like the account's data key (vault.svelte.js).
 import { api, ApiError } from "./api.js";
-import { Identity, ctxIdentity, ctxProjectName, ctxProjectRemote, ctxWsName, open, seal } from "./e2e-v2.js";
+import { Identity, ctxIdentity, ctxProjectName, ctxProjectRemote, ctxWsName, ctxWsReport, open, seal } from "./e2e-v2.js";
 import { decryptTeamRows, fromB64, hex, keyId, makeGrant, openGrants, rowFingerprint, splitRecipients, toB64 } from "./team-keys.js";
 import { LockedError, vault } from "./vault.svelte.js";
 
@@ -260,4 +260,28 @@ export async function openTeamActivity(res) {
   await loadKeys(res.workspace);
   const rows = await decryptTeamRows(res, keyFor);
   return { rows, notes: team.states[res.workspace]?.toVerify.length ? ["Some team data is waiting for you to verify a teammate's key on the workspace page."] : [] };
+}
+
+
+// --- shared weekly reports (backend docs/journal.md, Fase C) ------------------------------
+
+/**
+ * Seal a report with the workspace key (its current version).
+ * @param {{ id: number, key_version: number }} ws @param {number} authorId @param {string} periodStart @param {string} text
+ */
+export async function sealReport(ws, authorId, periodStart, text) {
+  const key = keyFor("ws", ws.id, ws.key_version);
+  if (!key) throw new Error("You do not hold the workspace key yet.");
+  return toB64(await seal(key, enc.encode(text), ctxWsReport(ws.id, ws.key_version, authorId, periodStart)));
+}
+
+/**
+ * Open a shared report, or null when its key version is not held here.
+ * @param {number} wsId @param {{ body_ct: string, key_version: number, author_id: number, period_start: string }} r
+ */
+export async function openReport(wsId, r) {
+  const key = keyFor("ws", wsId, r.key_version);
+  if (!key) return null;
+  const text = await openText(key, r.body_ct, ctxWsReport(wsId, r.key_version, r.author_id, r.period_start));
+  return text === "(unreadable)" ? null : text;
 }

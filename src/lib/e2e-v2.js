@@ -46,6 +46,8 @@ export const ctxWsName = (wsId, version) => `clioilc:v2:ws-name:${wsId}:${versio
 export const ctxProjectName = (projectId, version) => `clioilc:v2:project-name:${projectId}:${version}`;
 /** @param {number} projectId @param {number} version */
 export const ctxProjectRemote = (projectId, version) => `clioilc:v2:project-remote:${projectId}:${version}`;
+/** A weekly report shared with a workspace. @param {number} wsId @param {number} version @param {number} authorId @param {string} periodStart */
+export const ctxWsReport = (wsId, version, authorId, periodStart) => `clioilc:v2:ws-report:${wsId}:${version}:${authorId}:${periodStart}`;
 /** @param {number} projectId @param {number} version @param {number} authorId @param {string} kind @param {string} id */
 export const ctxTeam = (projectId, version, authorId, kind, id) =>
   `clioilc:v2:team:${projectId}:${version}:${authorId}:${kind}:${id}`;

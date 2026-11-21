@@ -73,7 +73,8 @@ export function weekFacts(week, projectName) {
     if (w.user) bits.push(`by @${w.user}`);
     return `- ${w.title ?? "untitled"} (${bits.join(", ")})`;
   };
-  const out = [`Week: ${week.items} work items, ${week.commits} commits, ${week.prs.length} pull requests.`];
+  const n = (/** @type {number} */ k, /** @type {string} */ w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const out = [`Week: ${n(week.items, "work item")}, ${n(week.commits, "commit")}, ${n(week.prs.length, "pull request")}.`];
   /** @type {[string, WorkItem[]][]} */
   const groups = [
     ["Done", week.by.done],

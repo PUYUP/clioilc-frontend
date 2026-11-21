@@ -16,7 +16,8 @@
   import Login from "$lib/Login.svelte";
   import { current } from "$lib/scope.svelte.js";
   import { session } from "$lib/session.svelte.js";
-  import { wsLabel } from "$lib/team.svelte.js";
+  import { openReport, sealReport, wsLabel } from "$lib/team.svelte.js";
+  import { api } from "$lib/api.js";
   import Unlock from "$lib/Unlock.svelte";
   import { vault } from "$lib/vault.svelte.js";
 
@@ -238,6 +239,61 @@
     else listen(w.id, itemFacts(w, projectName(w.projectId), now), "en");
   };
   const voiceFor = (/** @type {Lang} */ l) => pickVoice(voiceList, l);
+
+  // --- shared weekly reports (Fase C) -------------------------------------------------------
+  /**
+   * @typedef {{ id: number, author: string, author_id: number, period_start: string, period_end: string,
+   *   kind: "summary" | "facts", lang: Lang, body: string | null, body_ct: string | null, key_version: number | null,
+   *   updated_at: string, can_delete: boolean, text: string | null }} SharedReport
+   */
+  let shared = $state(/** @type {{ canShare: boolean, reports: SharedReport[] } | null} */ (null));
+  let shareBusy = $state(false);
+  let shareError = $state(/** @type {string | null} */ (null));
+
+  async function loadShared() {
+    const ws = current();
+    if (!ws) return;
+    const res = await api(`/api/v1/workspaces/${ws.slug}/reports/`);
+    const reports = await Promise.all(
+      res.reports.map(async (/** @type {any} */ r) => ({ ...r, text: r.body ?? (r.body_ct ? await openReport(ws.id, r) : null) })),
+    );
+    shared = { canShare: res.can_share, reports };
+  }
+  $effect(() => {
+    if (view === "week" && data?.team && !locked) loadShared().catch(() => (shared = null));
+  });
+
+  async function shareReport() {
+    const ws = current();
+    if (!ws || !session.user) return;
+    shareBusy = true;
+    shareError = null;
+    try {
+      const s = summaries.week;
+      const summary = s?.text && !s.busy && !s.error;
+      const text = summary ? s.text : weekFacts(week, projectName);
+      const periodStart = isoDate(new Date(now.getTime() - 6 * 86400e3));
+      /** @type {Record<string, unknown>} */
+      const body = { period_start: periodStart, period_end: isoDate(now), kind: summary ? "summary" : "facts", lang: summary ? s.lang : "en" };
+      if (ws.enc_mode === "e2e") {
+        body.body_ct = await sealReport(ws, session.user.id, periodStart, text);
+        body.key_version = ws.key_version;
+      } else body.body = text;
+      await api(`/api/v1/workspaces/${ws.slug}/reports/`, { method: "PUT", body });
+      await loadShared();
+    } catch (e) {
+      shareError = e instanceof ApiError ? `Could not share (${e.status}).` : e instanceof Error ? e.message : "Could not share.";
+    } finally {
+      shareBusy = false;
+    }
+  }
+  /** @param {SharedReport} r */
+  async function deleteReport(r) {
+    const ws = current();
+    if (!ws) return;
+    await api(`/api/v1/workspaces/${ws.slug}/reports/${r.id}/`, { method: "DELETE" });
+    await loadShared();
+  }
 </script>
 
 {#snippet badge(/** @type {Status} */ s)}
@@ -396,10 +452,43 @@
     </div>
 
     {#if view === "week"}
-      {#if canSummarize || voiceFor(outLang)}
+      {#if canSummarize || voiceFor(outLang) || (data.team && shared?.canShare)}
         <section class="card block report">
           <h2>Weekly report</h2>
           {@render aiBlock("week", summarizeTheWeek, () => listen("week", summaries.week?.text || weekFacts(week, projectName), summaries.week?.text ? summaries.week.lang : "en"), !!voiceFor(summaries.week?.text ? summaries.week.lang : "en"))}
+          {#if data.team && shared?.canShare}
+            <div class="share">
+              <button class="btn primary small-btn" disabled={shareBusy || summaries.week?.busy} onclick={shareReport}>
+                {shareBusy ? "Sharing…" : summaries.week?.text && !summaries.week.error ? "Share this report with the workspace" : "Share this week's facts with the workspace"}
+              </button>
+              <span class="muted tiny">{current()?.enc_mode === "e2e" ? "Encrypted with the workspace key: only members can read it." : "Members of this workspace can read it."}</span>
+            </div>
+            {#if shareError}<p class="error small">{shareError}</p>{/if}
+          {/if}
+        </section>
+      {/if}
+      {#if data.team && shared?.reports.length}
+        <section class="card block">
+          <h2>Shared reports <span class="n">{shared.reports.length}</span></h2>
+          <ul class="reports">
+            {#each shared.reports as r (r.id)}
+              <li>
+                <p class="small meta">
+                  <strong>@{r.author}</strong> · {dateLabel(new Date(`${r.period_start}T12:00:00`))} – {dateLabel(new Date(`${r.period_end}T12:00:00`))}
+                  · {r.kind === "summary" ? "AI summary (on the author's computer)" : "facts"}
+                </p>
+                {#if r.text}<p class="rtext">{r.text}</p>{:else}<p class="muted small">Cannot be opened with the keys you hold.</p>{/if}
+                <div class="ai">
+                  {#if r.text && voiceFor(r.lang)}
+                    <button class="btn small-btn" aria-pressed={speaking === `r${r.id}`} onclick={() => listen(`r${r.id}`, /** @type {string} */ (r.text), r.lang)}>
+                      <span aria-hidden="true">{speaking === `r${r.id}` ? "■" : "🔊"}</span> {speaking === `r${r.id}` ? "Stop" : "Listen"}
+                    </button>
+                  {/if}
+                  {#if r.can_delete}<button class="btn small-btn" onclick={() => deleteReport(r)}>Delete</button>{/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
         </section>
       {/if}
       <section class="tiles" aria-label="This week">
@@ -536,6 +625,11 @@
     background: var(--surface); color: var(--text-primary); max-width: 100%;
   }
   .report h2 { margin-bottom: 0; }
+  .share { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 10px; }
+  .tiny { font-size: 12px; }
+  .reports { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+  .reports li + li { border-top: 1px solid var(--grid); padding-top: 12px; }
+  .rtext { margin: 6px 0 0; font-size: 14px; white-space: pre-line; overflow-wrap: anywhere; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
   .tile { padding: 12px 14px; display: grid; gap: 2px; }
   .big { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
