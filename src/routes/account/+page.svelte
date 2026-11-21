@@ -7,6 +7,45 @@
   import { ensureIdentity, isE2EAccount, loadMe, team } from "$lib/team.svelte.js";
   import { showFingerprint } from "$lib/team-keys.js";
   import Unlock from "$lib/Unlock.svelte";
+  import { addPasskey, deletePasskey, listPasskeys, passkeysAvailable } from "$lib/passkey.js";
+  import { unlockVault } from "$lib/vault.svelte.js";
+
+  // Passkeys: unlock with Touch ID / Face ID instead of the passphrase.
+  /** @type {import("$lib/passkey.js").Passkey[]} */
+  let passkeys = $state([]);
+  let pkPassphrase = $state("");
+  let pkLabel = $state(typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "Mac" : "This device");
+  let pkBusy = $state(false);
+  let pkError = $state(/** @type {string | null} */ (null));
+  $effect(() => {
+    if (session.user && isE2EAccount() && passkeysAvailable()) listPasskeys().then((l) => (passkeys = l));
+  });
+  async function addOne() {
+    if (!session.user) return;
+    pkBusy = true;
+    pkError = null;
+    try {
+      // The data key's bytes are needed once, to wrap them for the passkey.
+      const raw = await unlockVault(pkPassphrase, { remember: !!vault.rememberedUntil, userId: session.user.id });
+      if (!raw) throw new Error("Wrong passphrase.");
+      try {
+        await addPasskey(raw, session.user, pkLabel.trim() || "Passkey");
+      } finally {
+        raw.fill(0);
+      }
+      pkPassphrase = "";
+      passkeys = await listPasskeys();
+    } catch (e) {
+      pkError = e instanceof Error && e.name === "NotAllowedError" ? "Cancelled." : e instanceof Error ? e.message : "Could not add the passkey.";
+    } finally {
+      pkBusy = false;
+    }
+  }
+  /** @param {number} id */
+  async function removeOne(id) {
+    await deletePasskey(id);
+    passkeys = await listPasskeys();
+  }
 
   let identityError = $state(/** @type {string | null} */ (null));
   $effect(() => {
@@ -89,6 +128,37 @@
     </section>
   {/if}
 
+  {#if isE2EAccount() && passkeysAvailable()}
+    <section class="card">
+      <h2>Passkeys</h2>
+      <p class="muted small">
+        Unlock your end-to-end data with Touch ID, Face ID or Windows Hello instead of the passphrase. A passkey synced
+        to your other devices (for example in iCloud Keychain) unlocks them too. Keep the passphrase: it is the way back
+        if every passkey is lost.
+      </p>
+      {#if passkeys.length}
+        <ul class="passkeys">
+          {#each passkeys as p (p.id)}
+            <li><span><span aria-hidden="true">🔑</span> {p.label || "Passkey"} <span class="muted">· added {new Date(p.created_at).toLocaleDateString()}</span></span><button class="btn" onclick={() => removeOne(p.id)}>Remove</button></li>
+          {/each}
+        </ul>
+      {/if}
+      <form
+        onsubmit={(e) => {
+          e.preventDefault();
+          addOne();
+        }}
+      >
+        <label for="pk-label" class="small">Name</label>
+        <input id="pk-label" class="input" bind:value={pkLabel} maxlength="100" />
+        <label for="pk-pass" class="small">Your passphrase (once, to set the passkey up)</label>
+        <input id="pk-pass" class="input" type="password" autocomplete="current-password" bind:value={pkPassphrase} />
+        <div class="row"><button class="btn primary" type="submit" disabled={pkBusy || !pkPassphrase}>{pkBusy ? "Waiting for the passkey…" : "Add a passkey on this device"}</button></div>
+      </form>
+      {#if pkError}<p class="error small" role="alert">{pkError}</p>{/if}
+    </section>
+  {/if}
+
   <section class="card">
     <h2>Export your data</h2>
     <p class="muted small">
@@ -135,6 +205,8 @@
   h2 { font-size: 16px; margin: 0 0 6px; }
   .small { font-size: 13px; margin: 4px 0 12px; }
   section { padding: 18px 20px; margin-bottom: 12px; }
+  .passkeys { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+  .passkeys li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
   .danger-zone { border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); }
   form { display: grid; gap: 8px; max-width: 360px; }
   label { margin: 0; }
