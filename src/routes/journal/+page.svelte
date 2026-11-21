@@ -6,6 +6,8 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { projectLabeler } from "$lib/activity.js";
+  import { LANGUAGES, availability, itemFacts, summarizeItem, summarizeWeek, weekFacts } from "$lib/ai.js";
+  import { pickVoice, speak, voices as loadVoices } from "$lib/speech.js";
   import { ApiError } from "$lib/api.js";
   import { commitUrl, shortHash } from "$lib/commits.js";
   import { duration } from "$lib/digest.js";
@@ -140,6 +142,102 @@
   };
   const FILES = 6;
   const ITEMS = 8;
+
+  // --- on-device AI (Fase B): summaries and reading aloud ----------------------------
+  /** @typedef {import("$lib/ai.js").Lang} Lang */
+  const LANG_KEY = "clioilc.summaryLang";
+  /** @returns {Lang} */
+  function initialLang() {
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (saved === "id" || saved === "en") return saved;
+    } catch {
+      /* private mode */
+    }
+    return navigator.language?.toLowerCase().startsWith("id") ? "id" : "en";
+  }
+  let lang = $state(initialLang());
+  let ai = $state(/** @type {Awaited<ReturnType<typeof availability>> | null} */ (null));
+  let voiceList = $state(/** @type {SpeechSynthesisVoice[]} */ ([]));
+  /** Summaries by work item id (or "week"); in memory only: they hold private text. */
+  let summaries = $state(/** @type {Record<string, { text: string, busy: boolean, error?: string, lang: Lang }>} */ ({}));
+  let download = $state(/** @type {number | null} */ (null));
+  let speaking = $state(/** @type {string | null} */ (null));
+  /** @type {{ stop: () => void } | null} */
+  let speech = null;
+
+  $effect(() => {
+    const l = lang;
+    try {
+      localStorage.setItem(LANG_KEY, l);
+    } catch {
+      /* private mode */
+    }
+    availability(l).then((a) => (ai = a));
+  });
+  $effect(() => {
+    loadVoices().then((v) => (voiceList = v));
+    return () => speech?.stop();
+  });
+
+  const canSummarize = $derived(!!ai && (ai.summarizer !== "unavailable" || ai.prompt !== "unavailable"));
+  const needsDownload = $derived(!!ai && ai.summarizer !== "available" && ai.prompt !== "available");
+  /** The language summaries come out in (English when the chosen one is not supported). */
+  const outLang = $derived(/** @type {Lang} */ (ai?.lang ?? lang));
+
+  /** @param {string} key @param {() => Promise<string>} run */
+  async function summarize(key, run) {
+    summaries[key] = { text: "", busy: true, lang: outLang };
+    try {
+      const text = await run();
+      summaries[key] = { text, busy: false, lang: outLang };
+    } catch (e) {
+      summaries[key] = { text: "", busy: false, lang: outLang, error: e instanceof Error ? e.message : "The on-device model failed." };
+    } finally {
+      download = null;
+    }
+  }
+  const progress = {
+    onProgress: (/** @type {number} */ loaded) => (download = loaded),
+    onText: (/** @type {string} */ _t) => {},
+  };
+  /** @param {WorkItem} w */
+  const summarizeOne = (w) =>
+    summarize(w.id, () =>
+      summarizeItem(itemFacts(w, projectName(w.projectId), now), outLang, {
+        ...progress,
+        onText: (t) => (summaries[w.id] = { text: t, busy: true, lang: outLang }),
+      }),
+    );
+  const summarizeTheWeek = () =>
+    summarize("week", () =>
+      summarizeWeek(weekFacts(week, projectName), outLang, {
+        ...progress,
+        onText: (t) => (summaries.week = { text: t, busy: true, lang: outLang }),
+      }),
+    );
+
+  /** @param {string} key @param {string} text @param {Lang} l */
+  function listen(key, text, l) {
+    if (speaking === key) {
+      speech?.stop();
+      return;
+    }
+    speech?.stop();
+    const voice = pickVoice(voiceList, l);
+    if (!voice) return;
+    speaking = key;
+    speech = speak(text, voice, () => {
+      if (speaking === key) speaking = null;
+    });
+  }
+  /** Reads the summary if there is one, else the facts themselves. @param {WorkItem} w */
+  const listenTo = (w) => {
+    const s = summaries[w.id];
+    if (s?.text && !s.busy) listen(w.id, s.text, s.lang);
+    else listen(w.id, itemFacts(w, projectName(w.projectId), now), "en");
+  };
+  const voiceFor = (/** @type {Lang} */ l) => pickVoice(voiceList, l);
 </script>
 
 {#snippet badge(/** @type {Status} */ s)}
@@ -147,6 +245,30 @@
     <span aria-hidden="true">{s === "done" ? "✓" : s === "committed" ? "●" : s === "active" ? "▶" : s === "pending" ? "⏸" : s === "discarded" ? "↺" : "–"}</span>
     {STATUS_LABEL[s]}
   </span>
+{/snippet}
+
+{#snippet aiBlock(/** @type {string} */ key, /** @type {() => void} */ onSummarize, /** @type {() => void} */ onListen, /** @type {boolean} */ hasVoice)}
+  {@const s = summaries[key]}
+  {#if canSummarize || hasVoice}
+    <div class="ai">
+      {#if canSummarize}
+        <button class="btn small-btn" disabled={s?.busy} onclick={onSummarize} title={needsDownload ? "The first summary downloads the on-device model (once)" : "Summarized on this computer"}>
+          <span aria-hidden="true">✨</span> {s?.busy ? (download != null && download < 1 ? `Downloading model ${Math.round(download * 100)}%` : "Summarizing…") : s?.text ? "Summarize again" : "Summarize"}
+        </button>
+      {/if}
+      {#if hasVoice}
+        <button class="btn small-btn" aria-pressed={speaking === key} onclick={onListen} disabled={s?.busy}>
+          <span aria-hidden="true">{speaking === key ? "■" : "🔊"}</span> {speaking === key ? "Stop" : "Listen"}
+        </button>
+      {/if}
+    </div>
+  {/if}
+  {#if s?.text || s?.error}
+    <div class="summary" aria-live="polite">
+      {#if s.error}<p class="error small">{s.error}</p>{:else}<p>{s.text}</p>{/if}
+      {#if !s.busy && !s.error}<p class="muted tiny">Summarized on this computer (Gemini Nano){s.lang !== lang ? " · in English: the chosen language is not supported yet" : ""}. AI can be wrong: check it against the facts on this page.</p>{/if}
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet itemCard(/** @type {WorkItem} */ w)}
@@ -167,6 +289,7 @@
     {#each w.pauses as p, k (k)}
       <p class="muted small pause">Paused {span(p.to.getTime() - p.from.getTime())} ({dateLabel(p.from)} → {dateLabel(p.to)})</p>
     {/each}
+    {@render aiBlock(w.id, () => summarizeOne(w), () => listenTo(w), !!voiceFor(summaries[w.id]?.text ? summaries[w.id].lang : "en"))}
 
     {#if w.commits.length || w.prs.length}
       <ul class="commits" aria-label="Commits">
@@ -229,6 +352,11 @@
       </p>
     </div>
     <div class="controls">
+      {#if canSummarize}
+        <select class="lang" aria-label="Summary language" bind:value={lang}>
+          {#each LANGUAGES as l (l.code)}<option value={l.code}>{l.label}</option>{/each}
+        </select>
+      {/if}
       <div class="seg" role="group" aria-label="View">
         <button aria-pressed={view === "items"} onclick={() => setParams({ view: null })}>Items</button>
         <button aria-pressed={view === "week"} onclick={() => setParams({ view: "week" })}>This week</button>
@@ -268,6 +396,12 @@
     </div>
 
     {#if view === "week"}
+      {#if canSummarize || voiceFor(outLang)}
+        <section class="card block report">
+          <h2>Weekly report</h2>
+          {@render aiBlock("week", summarizeTheWeek, () => listen("week", summaries.week?.text || weekFacts(week, projectName), summaries.week?.text ? summaries.week.lang : "en"), !!voiceFor(summaries.week?.text ? summaries.week.lang : "en"))}
+        </section>
+      {/if}
       <section class="tiles" aria-label="This week">
         <div class="card tile"><span class="big">{week.by.done.length}</span><span class="muted small">done</span></div>
         <div class="card tile"><span class="big">{week.by.committed.length}</span><span class="muted small">committed, not pushed</span></div>
@@ -391,6 +525,17 @@
   .err { color: var(--critical); margin-right: 2px; }
   .sample { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   .link { display: inline-block; margin-top: 8px; }
+  .ai { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .small-btn { font-size: 13px; padding: 4px 10px; display: inline-flex; gap: 6px; align-items: center; }
+  .small-btn[aria-pressed="true"] { background: var(--ghost); }
+  .summary { margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: var(--ghost); font-size: 14px; }
+  .summary p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+  .summary .tiny { font-size: 12px; margin-top: 6px; }
+  .lang {
+    font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-primary); max-width: 100%;
+  }
+  .report h2 { margin-bottom: 0; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
   .tile { padding: 12px 14px; display: grid; gap: 2px; }
   .big { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
