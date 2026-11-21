@@ -3,7 +3,11 @@
 // Team rows come from other people's machines, so the shape is checked here
 // and only known hosts get a link.
 
-/** @typedef {{ hash: string, branch: string | null, subject: string, remote: string | null, files?: number, insertions?: number, deletions?: number }} Commit */
+/**
+ * @typedef {{ path: string, insertions: number | null, deletions: number | null }} FileChange
+ * @typedef {{ hash: string, branch: string | null, subject: string, remote: string | null,
+ *   files?: number, insertions?: number, deletions?: number, changes: FileChange[] }} Commit
+ */
 
 const HASH = /^[0-9a-f]{7,64}$/;
 const REMOTE = /^[a-z0-9.-]+(\/[^\s/]+)+$/;
@@ -21,9 +25,20 @@ export function commitsOf(raw) {
       subject: typeof c.subject === "string" ? c.subject : "",
       remote: typeof c.remote === "string" && REMOTE.test(c.remote) ? c.remote : null,
       ...stats(c),
+      changes: changesOf(c.changes),
     });
   }
   return out;
+}
+
+/** The files a commit changed (from the tracker, at most 50). @param {unknown} raw @returns {FileChange[]} */
+function changesOf(raw) {
+  if (!Array.isArray(raw)) return [];
+  const count = (/** @type {unknown} */ v) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
+  return raw
+    .slice(0, 50)
+    .filter((f) => f && typeof f.path === "string" && f.path)
+    .map((f) => ({ path: f.path, insertions: count(f.insertions), deletions: count(f.deletions) }));
 }
 
 /** Size of the change, when the tracker found the repository. @param {any} c */

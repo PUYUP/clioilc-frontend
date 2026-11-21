@@ -3,6 +3,7 @@
   import { page } from "$app/state";
   import { ApiError } from "$lib/api.js";
   import { commitUrl, shortHash } from "$lib/commits.js";
+  import CommitFiles from "$lib/CommitFiles.svelte";
   import { LockedError, groupBySession, loadActivity, projectLabeler } from "$lib/activity.js";
   import { isoDate, timeZone, usd } from "$lib/format.js";
   import { renderMarkdown } from "$lib/markdown.js";
@@ -352,6 +353,7 @@
                             </button>
                             <span class="subject">{c.subject}</span>
                             {#if url}<a class="open" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
+                            <CommitFiles commit={c} />
                           </li>
                         {/each}
                       </ul>

@@ -10,6 +10,7 @@
   import { pickVoice, speak, voices as loadVoices } from "$lib/speech.js";
   import { ApiError } from "$lib/api.js";
   import { commitUrl, shortHash } from "$lib/commits.js";
+  import CommitFiles from "$lib/CommitFiles.svelte";
   import { duration } from "$lib/digest.js";
   import { ago, count, isoDate, timeZone, usd } from "$lib/format.js";
   import { LockedError, STATUS_LABEL, STATUSES, loadCosts, loadJournal, repeatedErrors, span, statusOf, weekSummary } from "$lib/journal.js";
@@ -361,6 +362,7 @@
               {#if c.insertions != null}<span class="stat"><span class="add">+{c.insertions}</span> <span class="del">−{c.deletions}</span></span>{/if}
               {#if url}<a class="open" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
             </span>
+            <CommitFiles commit={c} />
           </li>
         {/each}
       </ul>

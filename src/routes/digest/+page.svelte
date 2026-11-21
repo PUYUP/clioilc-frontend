@@ -6,6 +6,7 @@
   import { ApiError } from "$lib/api.js";
   import { LockedError, loadActivity, projectLabeler } from "$lib/activity.js";
   import { commitUrl, shortHash } from "$lib/commits.js";
+  import CommitFiles from "$lib/CommitFiles.svelte";
   import { buildDigest, duration } from "$lib/digest.js";
   import { count, isoDate, timeZone, usd } from "$lib/format.js";
   import Login from "$lib/Login.svelte";
@@ -245,6 +246,7 @@
                         <span class="msg">{c.message}</span>
                         {#if c.commit?.insertions != null}<span class="stat"><span class="add">+{c.commit.insertions}</span> <span class="del">−{c.commit.deletions}</span></span>{/if}
                         {#if url}<a class="ext" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
+                        {#if c.commit}<CommitFiles commit={c.commit} />{/if}
                       </li>
                     {/each}
                   </ul>
