@@ -5,8 +5,8 @@
   import { goto } from "$app/navigation";
   import { session, refreshSession, logout } from "$lib/session.svelte.js";
   import { scope, refreshWorkspaces, setScope } from "$lib/scope.svelte.js";
-  import { decryptNames, loadKeys, loadMe, team, wsLabel } from "$lib/team.svelte.js";
-  import { vault } from "$lib/vault.svelte.js";
+  import { decryptNames, forgetTeamKeys, loadKeys, loadMe, team, wsLabel } from "$lib/team.svelte.js";
+  import { lockVault, restoreVault, vault } from "$lib/vault.svelte.js";
 
   let { children } = $props();
   onMount(refreshSession);
@@ -14,6 +14,19 @@
   $effect(() => {
     if (session.user) refreshWorkspaces().then(() => loadMe().catch(() => {}));
   });
+  // A key this device remembers (30 days, this user only) unlocks right away.
+  $effect(() => {
+    if (session.user) restoreVault(session.user.id);
+  });
+
+  async function lock() {
+    await lockVault();
+    forgetTeamKeys();
+  }
+  async function signOut() {
+    await lock();
+    await logout();
+  }
 
   // E2E workspace names are sealed: open them once the passphrase is unlocked.
   $effect(() => {
@@ -66,7 +79,12 @@
     {#if session.user}
       <div class="user">
         <a class="username" href="/account" aria-current={page.url.pathname.startsWith("/account") ? "page" : undefined} title="Account">{session.user.username}</a>
-        <button class="btn" onclick={logout}>Sign out</button>
+        {#if vault.dataKey}
+          <button class="btn lock" onclick={lock} title={vault.rememberedUntil ? `Remembered on this device until ${vault.rememberedUntil.toLocaleDateString()}. Lock forgets it.` : "Forget the unlocked key in this tab"}>
+            <span aria-hidden="true">🔓</span> Lock
+          </button>
+        {/if}
+        <button class="btn" onclick={signOut}>Sign out</button>
       </div>
     {/if}
   </div>

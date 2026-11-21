@@ -285,3 +285,13 @@ export async function openReport(wsId, r) {
   const text = await openText(key, r.body_ct, ctxWsReport(wsId, r.key_version, r.author_id, r.period_start));
   return text === "(unreadable)" ? null : text;
 }
+
+
+/** On lock: drop the identity and team keys opened with the data key. */
+export function forgetTeamKeys() {
+  team.identity = null;
+  team.fingerprint = null;
+  team.keys = {};
+  team.states = {};
+  team.names = {};
+}

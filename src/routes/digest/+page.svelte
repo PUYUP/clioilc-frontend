@@ -10,7 +10,8 @@
   import { count, isoDate, timeZone, usd } from "$lib/format.js";
   import Login from "$lib/Login.svelte";
   import { session } from "$lib/session.svelte.js";
-  import { unlockVault, vault } from "$lib/vault.svelte.js";
+  import Unlock from "$lib/Unlock.svelte";
+  import { vault } from "$lib/vault.svelte.js";
 
   /** @typedef {import("$lib/digest.js").DayDigest} DayDigest */
 
@@ -177,20 +178,7 @@
   {/if}
 
   {#if locked}
-    <div class="card unlock">
-      <h2>Private data is end-to-end encrypted</h2>
-      <p class="muted">Enter the passphrase you chose during <code>clioilc login</code>. The key stays in this tab only.</p>
-      <form
-        onsubmit={(e) => {
-          e.preventDefault();
-          unlockVault(passphrase).then(() => (passphrase = ""));
-        }}
-      >
-        <input type="password" bind:value={passphrase} autocomplete="current-password" placeholder="Passphrase" aria-label="Passphrase" />
-        <button class="btn primary" disabled={vault.busy || !passphrase}>{vault.busy ? "Unlocking…" : "Unlock"}</button>
-      </form>
-      {#if vault.error}<p class="error" role="alert">{vault.error}</p>{/if}
-    </div>
+    <Unlock title="Private data is end-to-end encrypted" />
   {:else}
     {#each dates as date (date)}
       {@const d = days[date]}
@@ -314,14 +302,11 @@
   .seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; background: var(--ghost); }
   .dates { display: flex; align-items: center; gap: 6px; flex: 1 1 260px; max-width: 100%; }
   .dates input { flex: 1 1 0; }
-  input[type="date"], input[type="password"] {
+  input[type="date"] {
     font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text-primary); min-width: 0;
   }
   .summary { margin: 0 0 8px; }
-  .unlock form { display: flex; gap: 8px; margin-top: 12px; }
-  .unlock input { flex: 1; }
-  .unlock h2 { font-size: 16px; margin: 0 0 6px; }
   .day { margin-top: 24px; }
   .day header { margin-bottom: 10px; }
   .day h2 { font-size: 17px; margin: 0; display: flex; align-items: baseline; gap: 8px; }

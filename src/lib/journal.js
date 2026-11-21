@@ -117,7 +117,7 @@ export function toWorkItem(id, d, user) {
 /**
  * Work items whose last activity is on or after `since` (YYYY-MM-DD, local),
  * newest first, with project names by id.
- * @param {string} since @param {Uint8Array<ArrayBuffer> | null} dataKey @param {AbortSignal} [signal]
+ * @param {string} since @param {CryptoKey | null} dataKey @param {AbortSignal} [signal]
  */
 export async function loadJournal(since, dataKey, signal) {
   const params = withScope(new URLSearchParams({ since, tz: timeZone }));

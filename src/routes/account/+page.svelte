@@ -50,7 +50,7 @@
     deleteError = null;
     try {
       await api("/api/v1/users/me/", { method: "DELETE", body: { confirm: confirmText } });
-      lockVault();
+      await lockVault();
       session.user = null;
       location.assign("/");
     } catch (e) {

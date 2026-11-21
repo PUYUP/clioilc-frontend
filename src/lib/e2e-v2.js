@@ -10,7 +10,7 @@ import { Aes256Gcm, CipherSuite, HkdfSha256 } from "@hpke/core";
 import { XWing } from "@hpke/hybridkem-x-wing";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { ml_kem768_x25519 } from "@noble/post-quantum/hybrid.js";
-import { open } from "./e2e.js";
+import { aesKey, open } from "./e2e.js";
 
 export { open };
 
@@ -56,13 +56,13 @@ export const ctxTeam = (projectId, version, authorId, kind, id) =>
 
 /**
  * 0x01 || nonce(12) || AES-256-GCM(ciphertext+tag). `nonce` is for fixtures only.
- * @param {Bytes} rawKey @param {Uint8Array} plaintext @param {string} ctx @param {Uint8Array} [nonce]
+ * @param {Bytes | CryptoKey} rawKey @param {Uint8Array} plaintext @param {string} ctx @param {Uint8Array} [nonce]
  * @returns {Promise<Bytes>}
  */
 export async function seal(rawKey, plaintext, ctx, nonce) {
   const iv = own(nonce ?? crypto.getRandomValues(new Uint8Array(12)));
-  if (rawKey.length !== 32 || iv.length !== 12) throw new Error("bad key or nonce length");
-  const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
+  if ((rawKey instanceof Uint8Array && rawKey.length !== 32) || iv.length !== 12) throw new Error("bad key or nonce length");
+  const key = await aesKey(rawKey, "encrypt");
   const ct = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: enc.encode(ctx) }, key, own(plaintext)),
   );

@@ -10,7 +10,8 @@
   import { current } from "$lib/scope.svelte.js";
   import { wsLabel } from "$lib/team.svelte.js";
   import { session } from "$lib/session.svelte.js";
-  import { unlockVault, vault } from "$lib/vault.svelte.js";
+  import Unlock from "$lib/Unlock.svelte";
+  import { vault } from "$lib/vault.svelte.js";
 
   /** @typedef {import("$lib/activity.js").Item} Item */
 
@@ -234,20 +235,7 @@
   </div>
 
   {#if locked}
-    <div class="card unlock">
-      <h2>Private data is end-to-end encrypted</h2>
-      <p class="muted">Enter the passphrase you chose during <code>clioilc login</code>. The key stays in this tab only.</p>
-      <form
-        onsubmit={(e) => {
-          e.preventDefault();
-          unlockVault(passphrase).then(() => (passphrase = ""));
-        }}
-      >
-        <input type="password" bind:value={passphrase} autocomplete="current-password" placeholder="Passphrase" aria-label="Passphrase" />
-        <button class="btn primary" disabled={vault.busy || !passphrase}>{vault.busy ? "Unlocking…" : "Unlock"}</button>
-      </form>
-      {#if vault.error}<p class="error" role="alert">{vault.error}</p>{/if}
-    </div>
+    <Unlock title="Private data is end-to-end encrypted" />
   {:else if error}
     <div class="card"><p class="error" role="alert">{error}</p></div>
   {:else if data}
@@ -405,10 +393,9 @@
 <style>
   .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
   h1 { font-size: 20px; margin: 0; }
-  h2 { font-size: 16px; margin: 0 0 6px; }
   .small { font-size: 12px; margin: 0; }
   .nav { display: flex; gap: 6px; align-items: center; }
-  input[type="date"], input[type="search"], input[type="password"], select {
+  input[type="date"], input[type="search"], select {
     font: inherit;
     padding: 6px 10px;
     border-radius: 8px;
@@ -435,8 +422,6 @@
   .ic.ok { color: var(--good); }
   .ic.err { color: var(--critical); }
   .stale { opacity: 0.5; transition: opacity 120ms; }
-  .unlock form { display: flex; gap: 8px; margin-top: 12px; }
-  .unlock input { flex: 1; }
   .empty { text-align: center; padding: 40px 20px; }
   .group { padding: 0; margin-bottom: 12px; overflow: hidden; }
   .group header {

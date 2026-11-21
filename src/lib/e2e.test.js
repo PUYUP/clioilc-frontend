@@ -15,8 +15,11 @@ describe("e2e format v1", () => {
   });
 
   it("unlocks the keyring and decrypts a record", async () => {
-    const { dataKey, salt } = await unlock(fixture.keyring, fixture.passphrase);
-    expect(hex(dataKey)).toBe(fixture.dek_hex);
+    const { dataKey, raw, salt } = await unlock(fixture.keyring, fixture.passphrase);
+    expect(hex(raw)).toBe(fixture.dek_hex);
+    // The key kept for the session cannot be read back by script.
+    expect(dataKey.extractable).toBe(false);
+    await expect(crypto.subtle.exportKey("raw", dataKey)).rejects.toThrow();
     expect(hex(salt)).toBe(fixture.salt_hex);
     expect(await decryptRecord(dataKey, fixture.record)).toEqual(fixture.record_data);
   });

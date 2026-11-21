@@ -26,7 +26,7 @@ export { LockedError };
 
 /**
  * @param {string} date  YYYY-MM-DD in the browser's time zone
- * @param {Uint8Array<ArrayBuffer> | null} dataKey  E2E data key, if unlocked
+ * @param {CryptoKey | null} dataKey  E2E data key, if unlocked
  * @param {AbortSignal} [signal]
  */
 export async function loadActivity(date, dataKey, signal) {
@@ -44,7 +44,7 @@ export async function loadActivity(date, dataKey, signal) {
     res.private.map(async (/** @type {any} */ p) => {
       if (p.data || p.error) return p;
       try {
-        return { ...p, data: await decryptRecord(/** @type {Uint8Array<ArrayBuffer>} */ (dataKey), p) };
+        return { ...p, data: await decryptRecord(/** @type {CryptoKey} */ (dataKey), p) };
       } catch {
         return { ...p, error: "decrypt_failed" };
       }
@@ -175,7 +175,7 @@ export function shortProject(name) {
 /**
  * Project names by project_id, for labelling hashes. E2E names need the
  * unlocked data key; without it the map is empty and `locked` is true.
- * @param {Uint8Array<ArrayBuffer> | null} dataKey @param {AbortSignal} [signal]
+ * @param {CryptoKey | null} dataKey @param {AbortSignal} [signal]
  */
 export async function loadProjectNames(dataKey, signal) {
   const res = await api(`/api/v1/usage/projects/?${withScope(new URLSearchParams())}`, { signal });
