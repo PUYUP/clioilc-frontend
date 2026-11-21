@@ -118,6 +118,24 @@ describe("digest commits", () => {
 });
 
 
+describe("newest first", () => {
+  it("orders prompts and commits with the latest on top", () => {
+    const at = (/** @type {number} */ m) => new Date(Date.UTC(2026, 10, 20, 3, m));
+    const prompt = (/** @type {string} */ text, /** @type {number} */ m) => ({ id: text, ts: at(m), kind: "prompt", text, projectId: "p1", sessionId: "s", isSubagent: false, status: null });
+    const commitAt = (/** @type {string[]} */ subjects, /** @type {number} */ m) => ({
+      id: subjects.join(), ts: at(m), kind: "tool", text: "git commit", projectId: "p1", sessionId: "s", isSubagent: false, status: "ok",
+      tool: { name: "Bash", status: "ok", error: null, commits: subjects.map((s) => ({ hash: s.padEnd(40, "a"), subject: s, changes: [] })) },
+    });
+    const p = buildDigest({
+      items: /** @type {any} */ ([prompt("first", 1), commitAt(["a", "b"], 2), prompt("second", 3), commitAt(["c"], 4)]),
+      projects: new Map([["p1", "-w-app"]]),
+      messages: new Map(),
+    }).projects[0];
+    expect(p.prompts.map((x) => x.text)).toEqual(["second", "first"]);
+    expect(p.commits.map((c) => c.message)).toEqual(["c", "b", "a"]);
+  });
+});
+
 describe("files not committed", () => {
   const at = (/** @type {number} */ m) => new Date(Date.UTC(2026, 10, 20, 3, m));
   /** @param {string} id @param {number} m @param {string} path */

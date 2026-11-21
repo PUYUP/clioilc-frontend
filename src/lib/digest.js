@@ -176,8 +176,10 @@ function projectDigest(projectId, name, items, messages) {
     sessions: sessions.size,
     activeMs,
     costUsd,
-    prompts,
-    commits,
+    // Newest first; items arrive oldest first, commits of one command in the
+    // order they were made, so reversing keeps that order newest first too.
+    prompts: [...prompts].reverse(),
+    commits: [...commits].reverse(),
     pushed,
     uncommitted,
     // Files changed: those in the day's commits plus edits not committed; the
