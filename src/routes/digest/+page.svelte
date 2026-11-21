@@ -408,7 +408,7 @@
   ul.runs > li { display: grid; gap: 1px; min-width: 0; }
   .runs .rhead { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; min-width: 0; }
   .runs time { color: var(--text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none; }
-  .runs .what { color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+  .runs .what { color: var(--text-primary); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
   .runs code { display: block; font-size: 11.5px; background: none; padding: 0; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
   .runs .failed .what, .runs .failed code { color: var(--critical); }
   .runs .tool { font-size: 11.5px; font-weight: 600; flex: none; }
