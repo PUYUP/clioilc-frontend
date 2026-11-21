@@ -148,6 +148,18 @@
   const FILES = 8;
 </script>
 
+{#snippet commitLine(/** @type {import("$lib/digest.js").CommitLine} */ c)}
+  {@const url = c.commit ? commitUrl(c.commit) : null}
+  <li>
+    <time>{clock(c.ts)}</time>
+    {#if c.commit}<button class="hash" title="Copy {c.commit.hash}" onclick={() => copyHash(/** @type {string} */ (c.commit?.hash))}><code>{shortHash(c.commit.hash)}</code><span class="copied" aria-live="polite">{copied === c.commit.hash ? "copied" : ""}</span></button>{/if}
+    <span class="msg">{c.message}</span>
+    {#if c.commit?.insertions != null}<span class="stat"><span class="add">+{c.commit.insertions}</span> <span class="del">−{c.commit.deletions}</span></span>{/if}
+    {#if url}<a class="ext" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
+    {#if c.commit}<CommitFiles commit={c.commit} />{/if}
+  </li>
+{/snippet}
+
 {#if !session.user}
   <Login next={page.url.pathname + page.url.search} />
 {:else}
@@ -218,37 +230,48 @@
                   {usd(p.costUsd)}
                 </p>
 
-                {#if p.prompts.length}
-                  <h4>You asked</h4>
+                {#if p.turns.length}
+                  <h4>
+                    You asked
+                    {#if p.pushed}<span class="badge"><span aria-hidden="true">↑</span> pushed</span>{/if}
+                  </h4>
                   <ul class="prompts">
-                    {#each open.has(`${id}:prompts`) ? p.prompts : p.prompts.slice(0, PROMPTS) as q, k (k)}
-                      <li><time datetime={q.ts.toISOString()}>{clock(q.ts)}</time> <span class="msg">{q.text}</span></li>
+                    {#each open.has(`${id}:prompts`) ? p.turns : p.turns.slice(0, PROMPTS) as t, k (k)}
+                      <li>
+                        <div class="q"><time datetime={t.ts.toISOString()}>{clock(t.ts)}</time> <span class="msg">{t.text}</span></div>
+                        {#if t.commits.length}
+                          <ul class="commits sub">
+                            {#each t.commits as c, j (j)}{@render commitLine(c)}{/each}
+                          </ul>
+                        {:else if t.committedLater}
+                          <p class="outcome">
+                            → {count(t.edited, "file")} changed · committed at {clock(t.committedLater.ts)}{#if t.committedLater.commit}{" · "}<code
+                              >{shortHash(t.committedLater.commit.hash)}</code
+                              >{/if}{#if t.uncommitted}{" · "}{t.uncommitted} still not committed{/if}
+                          </p>
+                        {:else if t.edited}
+                          <p class="outcome warn">
+                            ✎ {count(t.edited, "file")} changed{#if t.uncommitted != null}, {t.uncommitted ? "not committed" : "committed"}{/if}
+                          </p>
+                        {:else if t.commands || t.failed}
+                          <p class="outcome">
+                            {count(t.commands, "command")}{#if t.failed}{" · "}<span class="err">{t.failed} failed</span>{/if}
+                          </p>
+                        {/if}
+                      </li>
                     {/each}
                   </ul>
-                  {#if p.prompts.length > PROMPTS}
+                  {#if p.turns.length > PROMPTS}
                     <button class="more" onclick={() => toggle(`${id}:prompts`)}>
-                      {open.has(`${id}:prompts`) ? "Show less" : `+${p.prompts.length - PROMPTS} more`}
+                      {open.has(`${id}:prompts`) ? "Show less" : `+${p.turns.length - PROMPTS} more`}
                     </button>
                   {/if}
                 {/if}
 
-                {#if p.commits.length}
-                  <h4>
-                    Commits
-                    {#if p.pushed}<span class="badge"><span aria-hidden="true">↑</span> pushed</span>{/if}
-                  </h4>
+                {#if p.earlierCommits.length}
+                  <h4>Commits from earlier prompts</h4>
                   <ul class="commits">
-                    {#each p.commits as c, k (k)}
-                      {@const url = c.commit ? commitUrl(c.commit) : null}
-                      <li>
-                        <time>{clock(c.ts)}</time>
-                        {#if c.commit}<button class="hash" title="Copy {c.commit.hash}" onclick={() => copyHash(/** @type {string} */ (c.commit?.hash))}><code>{shortHash(c.commit.hash)}</code><span class="copied" aria-live="polite">{copied === c.commit.hash ? "copied" : ""}</span></button>{/if}
-                        <span class="msg">{c.message}</span>
-                        {#if c.commit?.insertions != null}<span class="stat"><span class="add">+{c.commit.insertions}</span> <span class="del">−{c.commit.deletions}</span></span>{/if}
-                        {#if url}<a class="ext" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
-                        {#if c.commit}<CommitFiles commit={c.commit} />{/if}
-                      </li>
-                    {/each}
+                    {#each p.earlierCommits as c, k (k)}{@render commitLine(c)}{/each}
                   </ul>
                 {/if}
 
@@ -280,7 +303,7 @@
                   </p>
                 {/if}
 
-                {#if !p.prompts.length && !p.commits.length && !p.uncommitted?.length && !p.toolErrors && !p.messageErrors}
+                {#if !p.turns.length && !p.commits.length && !p.uncommitted?.length && !p.toolErrors && !p.messageErrors}
                   <p class="muted small">{count(p.commands, "command")} run, no file changes.</p>
                 {/if}
               </article>
@@ -324,7 +347,14 @@
   ul { margin: 0; padding-left: 18px; font-size: 14px; }
   li { margin: 2px 0; overflow-wrap: anywhere; }
   .prompts { list-style: none; padding-left: 0; }
-  .prompts li { color: var(--text-primary); display: flex; gap: 8px; align-items: baseline; }
+  .prompts { display: grid; gap: 6px; }
+  .prompts > li { color: var(--text-primary); display: grid; gap: 2px; }
+  .prompts .q { display: flex; gap: 8px; align-items: baseline; }
+  .commits.sub { margin: 2px 0 2px 44px; font-size: 13px; }
+  .outcome { margin: 0 0 0 44px; font-size: 12.5px; color: var(--text-secondary); }
+  .outcome code { font-size: 12px; }
+  .outcome.warn { color: var(--text-primary); }
+  .outcome .err { color: var(--critical); }
   .prompts time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
   .prompts .msg { min-width: 0; overflow-wrap: anywhere; }
   .commits { list-style: none; padding-left: 0; }

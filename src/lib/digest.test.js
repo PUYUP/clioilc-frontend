@@ -32,6 +32,14 @@ describe("promptLine", () => {
       expect(promptLine(t)).toBeNull();
     }
   });
+  it("prefers the user's own words to pasted text", () => {
+    const paste = '<pasted_content id="1">\n00:02\nb43c6ca\nE2E team workspaces\n</pasted_content id="1">';
+    expect(promptLine(`${paste}\npelajari dulu`)).toBe("pelajari dulu");
+    expect(promptLine(`fix ini lebih dahulu:\n${paste}`)).toBe("fix ini lebih dahulu:");
+    // Only a paste: its first line with a word, marked as pasted.
+    expect(promptLine(paste)).toBe("Pasted: E2E team workspaces");
+    expect(promptLine('<pasted_content id="2">\n{\n  "ada": true\n}\n</pasted_content id="2">')).toBe('Pasted: "ada": true');
+  });
 });
 
 describe("files", () => {
@@ -84,8 +92,8 @@ describe("buildDigest", () => {
     const { projects, totals } = buildDigest(day);
     expect(projects).toHaveLength(1);
     const p = projects[0];
-    expect(p.prompts.map((x) => x.text)).toEqual(["add a login page"]);
-    expect(p.prompts[0].ts).toBeInstanceOf(Date);
+    expect(p.turns.map((x) => x.text)).toEqual(["add a login page"]);
+    expect(p.turns[0].ts).toBeInstanceOf(Date);
     expect(p.commits.map((c) => c.message)).toEqual(["Add login page"]);
     expect(p.pushed).toBe(true);
     // The commit came from the command only (no file list): nothing is claimed uncommitted.
@@ -131,7 +139,7 @@ describe("newest first", () => {
       projects: new Map([["p1", "-w-app"]]),
       messages: new Map(),
     }).projects[0];
-    expect(p.prompts.map((x) => x.text)).toEqual(["second", "first"]);
+    expect(p.turns.map((x) => x.text)).toEqual(["second", "first"]);
     expect(p.commits.map((c) => c.message)).toEqual(["c", "b", "a"]);
   });
 });
@@ -174,5 +182,60 @@ describe("files not committed", () => {
   it("is empty when everything was committed", () => {
     const p = digestOf([edit("e1", 1, "/w/app/backend/docs/journal.md"), commit("c1", 2, ["docs/journal.md"])]);
     expect(p.uncommitted).toEqual([]);
+  });
+});
+
+
+describe("turns", () => {
+  const at = (/** @type {number} */ m) => new Date(Date.UTC(2026, 10, 20, 3, m));
+  /** @param {string} text @param {number} m @param {string} [s] */
+  const prompt = (text, m, s = "s1") => ({ id: text, ts: at(m), kind: "prompt", text, projectId: "p1", sessionId: s, isSubagent: false, status: null });
+  /** @param {string} id @param {number} m @param {Record<string, unknown>} tool @param {string} [text] @param {string} [s] */
+  const tool = (id, m, tool, text = "", s = "s1") => ({ id, ts: at(m), kind: "tool", text, projectId: "p1", sessionId: s, isSubagent: false, status: tool.status, tool: { error: null, commits: [], ...tool } });
+  const edit = (/** @type {string} */ id, /** @type {number} */ m, /** @type {string} */ path, s = "s1") => tool(id, m, { name: "Edit", status: "ok" }, path, s);
+  const commit = (/** @type {string} */ hash, /** @type {number} */ m, /** @type {string[]} */ paths, s = "s1") =>
+    tool(hash, m, { name: "Bash", status: "ok", commits: [{ hash: hash.padEnd(40, "0"), subject: `commit ${hash}`, root: "/w/app", changes: paths.map((p) => ({ path: p, insertions: 1, deletions: 0 })) }] }, "git commit", s);
+  const digest = (/** @type {any[]} */ items) => buildDigest({ items, projects: new Map([["p1", "-w-app"]]), messages: new Map() }).projects[0];
+
+  it("puts each commit under the prompt that led to it, per session", () => {
+    const p = digest([
+      prompt("add retries", 1),
+      prompt("fix the docs", 2, "s2"), // another session, in parallel
+      edit("e1", 3, "/w/app/pay.rs"),
+      edit("e2", 4, "/w/app/README.md", "s2"),
+      commit("aaaaaaa", 5, ["pay.rs"]),
+      commit("bbbbbbb", 6, ["README.md"], "s2"),
+    ]);
+    const byText = Object.fromEntries(p.turns.map((t) => [t.text, t.commits.map((c) => c.message)]));
+    expect(byText).toEqual({ "add retries": ["commit aaaaaaa"], "fix the docs": ["commit bbbbbbb"] });
+  });
+
+  it("says what a turn without a commit did", () => {
+    const p = digest([
+      prompt("explain CSP", 1),
+      prompt("do B", 2),
+      edit("e1", 3, "/w/app/a.rs"),
+      edit("e2", 4, "/w/app/b.rs"),
+      prompt("commit it", 5),
+      commit("ccccccc", 6, ["a.rs"]),
+      prompt("run the tests", 7),
+      tool("t1", 8, { name: "Bash", status: "ok" }, "cargo test"),
+      tool("t2", 9, { name: "Bash", status: "error" }, "cargo test"),
+      prompt("half done", 10),
+      edit("e3", 11, "/w/app/c.rs"),
+    ]);
+    const t = Object.fromEntries(p.turns.map((x) => [x.text, x]));
+    expect(t["explain CSP"]).toMatchObject({ edited: 0, commands: 0, failed: 0, committedLater: null });
+    expect(t["do B"].committedLater?.commit?.hash.slice(0, 7)).toBe("ccccccc");
+    expect(t["do B"]).toMatchObject({ edited: 2, uncommitted: 1 }); // b.rs never committed
+    expect(t["commit it"].commits).toHaveLength(1);
+    expect(t["run the tests"]).toMatchObject({ commands: 1, failed: 1 });
+    expect(t["half done"]).toMatchObject({ edited: 1, uncommitted: 1, committedLater: null });
+  });
+
+  it("keeps commits whose prompt was asked the day before", () => {
+    const p = digest([commit("ddddddd", 1, ["a.rs"]), prompt("next", 2)]);
+    expect(p.earlierCommits.map((c) => c.message)).toEqual(["commit ddddddd"]);
+    expect(p.turns[0].commits).toEqual([]);
   });
 });
