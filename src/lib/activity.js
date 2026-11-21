@@ -1,6 +1,7 @@
 // Activity timeline for one day, from GET /api/v1/usage/activity/
 // (see backend docs/api-v1.md -> "Menyusun timeline").
 import { api } from "./api.js";
+import { commitsOf } from "./commits.js";
 import { decryptRecord } from "./e2e.js";
 import { timeZone } from "./format.js";
 import { withScope } from "./scope.svelte.js";
@@ -14,7 +15,7 @@ import { openTeamActivity } from "./team.svelte.js";
  *   status: "ok" | "error" | null, errorKind?: string,
  *   messageId?: string, model?: string, costUsd?: number | null,
  *   user?: string,
- *   tool?: { name: string, status: string | null, error: string | null },
+ *   tool?: { name: string, status: string | null, error: string | null, commits: import("./commits.js").Commit[] },
  * }} Item
  * @typedef {{ key: string, projectId: string | null, sessionId: string | null, user?: string, items: Item[], costUsd: number }} Group
  */
@@ -94,7 +95,7 @@ function build(messages, toolCalls, privateRows) {
         projectId: m?.project_id ?? null, sessionId: m?.session_id ?? null, isSubagent: !!m?.is_subagent,
         messageId: t?.message_id ?? undefined, model: m?.model, costUsd: m?.cost_usd ?? null,
         status: t?.status === "ok" || t?.status === "error" ? t.status : null,
-        tool: { name: d.full_name ?? t?.name ?? "tool", status: t?.status ?? null, error: d.error ?? null },
+        tool: { name: d.full_name ?? t?.name ?? "tool", status: t?.status ?? null, error: d.error ?? null, commits: commitsOf(d.commits) },
         user: p.user,
       });
     }

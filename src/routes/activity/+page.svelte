@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { ApiError } from "$lib/api.js";
+  import { commitUrl, shortHash } from "$lib/commits.js";
   import { LockedError, groupBySession, loadActivity, projectLabeler } from "$lib/activity.js";
   import { isoDate, timeZone, usd } from "$lib/format.js";
   import { renderMarkdown } from "$lib/markdown.js";
@@ -34,6 +35,21 @@
   let passphrase = $state("");
   /** @type {Set<string>} */
   let expanded = $state(new Set());
+  /** The hash just copied, for a short confirmation. */
+  let copied = $state(/** @type {string | null} */ (null));
+
+  /** @param {string} hash */
+  async function copyHash(hash) {
+    try {
+      await navigator.clipboard.writeText(hash);
+      copied = hash;
+      setTimeout(() => {
+        if (copied === hash) copied = null;
+      }, 1500);
+    } catch {
+      copied = null;
+    }
+  }
 
   $effect(() => {
     if (!session.user) return;
@@ -67,6 +83,8 @@
     { key: "agent", label: "Agent" },
     { key: "thinking", label: "Thinking" },
     { key: "tool", label: "Tool" },
+    // A lens, not a kind: tool actions that made git commits (also under Tool).
+    { key: "commit", label: "Commits" },
   ]);
   const DEFAULT_TYPES = ["prompt", "agent", "tool"];
   const STATUSES = /** @type {const} */ ([
@@ -86,6 +104,9 @@
       ["ok", "error"].includes(page.url.searchParams.get("status") ?? "") ? page.url.searchParams.get("status") : "all"
     ),
   );
+
+  /** @param {Item} i */
+  const hasCommits = (i) => (i.tool?.commits.length ?? 0) > 0;
 
   /** @param {Item} i @returns {TypeKey | null} */
   const typeOf = (i) =>
@@ -119,12 +140,16 @@
     return data.items.filter((i) => {
       const t = typeOf(i);
       // Unreadable (locked) entries show whenever prompts or replies do.
-      if (t ? !types.has(t) : !(types.has("prompt") || types.has("agent"))) return false;
+      const shown = t ? types.has(t) || (types.has("commit") && hasCommits(i)) : types.has("prompt") || types.has("agent");
+      if (!shown) return false;
       if (status !== "all" && i.status !== status) return false;
       return (
         (!project || i.projectId === project) &&
         (!member || i.user === member) &&
-        (!q || i.text.toLowerCase().includes(q) || (i.tool?.name.toLowerCase().includes(q) ?? false))
+        (!q ||
+          i.text.toLowerCase().includes(q) ||
+          (i.tool?.name.toLowerCase().includes(q) ?? false) ||
+          (i.tool?.commits.some((c) => c.hash.startsWith(q) || c.subject.toLowerCase().includes(q)) ?? false))
       );
     });
   });
@@ -147,11 +172,12 @@
   // current selection.
   const counts = $derived.by(() => {
     /** @type {Record<string, number>} */
-    const c = { prompt: 0, agent: 0, thinking: 0, tool: 0, all: 0, ok: 0, error: 0 };
+    const c = { prompt: 0, agent: 0, thinking: 0, tool: 0, commit: 0, all: 0, ok: 0, error: 0 };
     for (const i of data?.items ?? []) {
       const t = typeOf(i);
       if (t && (status === "all" || i.status === status)) c[t]++;
-      if (!t || types.has(t)) {
+      if (hasCommits(i) && (status === "all" || i.status === status)) c.commit++;
+      if (!t || types.has(t) || (types.has("commit") && hasCommits(i))) {
         c.all++;
         if (i.status) c[i.status]++;
       }
@@ -327,6 +353,21 @@
                       {/if}
                     {/if}
                     {#if item.tool.error}<pre class="errtext">{item.tool.error}</pre>{/if}
+                    {#if item.tool.commits.length}
+                      <ul class="commits" aria-label="Commits">
+                        {#each item.tool.commits as c (c.hash)}
+                          {@const url = commitUrl(c)}
+                          <li>
+                            {#if c.branch}<span class="branch">{c.branch}</span>{/if}
+                            <button class="hash" title="Copy {c.hash}" onclick={() => copyHash(c.hash)}>
+                              <code>{shortHash(c.hash)}</code><span class="copied" aria-live="polite">{copied === c.hash ? "copied" : ""}</span>
+                            </button>
+                            <span class="subject">{c.subject}</span>
+                            {#if url}<a class="open" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
                   {:else if item.kind === "unreadable"}
                     <span class="muted">This entry cannot be opened (corrupt, or the key does not match).</span>
                   {:else}
@@ -380,11 +421,15 @@
   .filters input[type="search"] { flex: 1 1 200px; }
   .filters select { max-width: 100%; }
   .order { margin-left: auto; padding: 6px 12px; font-size: 14px; }
-  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+  .seg { display: inline-flex; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; background: var(--surface); }
+  .seg button { white-space: nowrap; flex: none; }
   .seg button { border: 0; background: none; padding: 6px 12px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
   .seg button + button { border-left: 1px solid var(--border); }
   .seg button:hover { background: var(--ghost); }
   .seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; background: var(--ghost); }
+  @media (max-width: 420px) {
+    .seg button { padding: 6px 6px; gap: 3px; }
+  }
   .n { font-size: 12px; font-weight: 400; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .ic { font-size: 12px; }
   .ic.ok { color: var(--good); }
@@ -455,6 +500,16 @@
   .status { font-size: 12px; display: inline-flex; gap: 4px; align-items: center; color: var(--text-secondary); }
   .status.ok span { color: var(--good); }
   .status.err { color: var(--critical); font-weight: 600; }
+  .commits { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+  .commits li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+  .branch { font-size: 12px; color: var(--text-secondary); }
+  .branch::before { content: "⎇ "; }
+  .hash { border: 1px solid var(--grid); background: var(--ghost); border-radius: 6px; padding: 0 6px; font-size: 12px; cursor: copy; }
+  .hash code { background: none; padding: 0; }
+  .copied { margin-left: 4px; color: var(--good); font-size: 11px; }
+  .copied:empty { display: none; }
+  .subject { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
+  .open { font-size: 12px; color: var(--accent); white-space: nowrap; }
   .errtext {
     margin: 6px 0 0; padding: 8px 10px; border-radius: 6px;
     background: var(--ghost); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere;
