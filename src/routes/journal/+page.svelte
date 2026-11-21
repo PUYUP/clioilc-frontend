@@ -307,7 +307,14 @@
     {:else if !shown.length}
       <div class="card">
         <p class="muted">
-          {data.items.length ? "Nothing matches these filters." : "No work items yet. They appear after the next sync of a tracker that has the journal (clioilc usage import fills in earlier history)."}
+          {#if data.items.length}
+            Nothing matches these filters.
+          {:else if data.team}
+            No work items from folders linked to <strong>{current() ? wsLabel(/** @type {any} */ (current())) : "this workspace"}</strong> yet.
+            Link a folder with <code>clioilc link</code>, or switch to <strong>Personal</strong> in the scope menu to see your own work.
+          {:else}
+            No work items yet. They appear after the next sync of a tracker that has the journal (<code>clioilc usage import</code> fills in earlier history).
+          {/if}
         </p>
       </div>
     {:else}
