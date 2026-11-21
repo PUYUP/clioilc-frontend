@@ -148,9 +148,9 @@
   const RUNS = 12;
   /** "Run tests: cargo test" -> { what: "Run tests", command: "cargo test" }. @param {string} text */
   const splitRun = (text) => {
-    const m = /^([^:]{3,80}):\s+(.+)$/.exec(text);
+    const m = /^([^:\n]{3,80}):\s+([\s\S]+)$/.exec(text);
     // A description reads like a sentence: capital first, no shell syntax.
-    return m && /^\p{Lu}/u.test(m[1]) && !/[$|`;<>]/.test(m[1]) ? { what: m[1], command: m[2] } : { what: "", command: text };
+    return m && /^\p{Lu}/u.test(m[1]) && !/[$|`<>]/.test(m[1]) ? { what: m[1], command: m[2] } : { what: "", command: text };
   };
   const FILES = 8;
 </script>
@@ -164,11 +164,13 @@
     <ul class="tree runs">
       {#each open.has(`${key}:all`) ? t.runs : t.runs.slice(0, RUNS) as r, j (j)}
         {@const split = splitRun(r.text)}
-        <li class:failed={r.failed} title={r.text}>
-          <time>{clock(r.ts)}</time>
-          {#if r.failed}<span class="err" aria-label="failed">✕</span>{/if}
-          {#if r.tool !== "Bash"}<span class="tool">{r.tool}</span>{/if}
-          {#if split.what}<span class="what">{split.what}</span>{/if}
+        <li class:failed={r.failed}>
+          <div class="rhead">
+            <time>{clock(r.ts)}</time>
+            {#if r.failed}<span class="err" aria-label="failed">✕</span>{/if}
+            {#if r.tool !== "Bash"}<span class="tool">{r.tool}</span>{/if}
+            {#if split.what}<span class="what">{split.what}</span>{/if}
+          </div>
           <code>{split.command || "(no description)"}</code>
         </li>
       {/each}
@@ -402,17 +404,13 @@
   .outcome .toggle { border: 0; background: none; padding: 0; font: inherit; color: var(--text-secondary); cursor: pointer; text-align: left; }
   .outcome .toggle:hover { color: var(--text-primary); }
   .runs { margin-top: 2px; max-width: 100%; overflow: hidden; }
-  /* One line per command: time, what it was for, the command (cut, full on hover). */
-  ul.runs > li { display: flex; flex-wrap: nowrap; gap: 6px; align-items: baseline; min-width: 0; white-space: nowrap; }
+  /* Each command whole: time and what it was for, then the command itself. */
+  ul.runs > li { display: grid; gap: 1px; min-width: 0; }
+  .runs .rhead { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; min-width: 0; }
   .runs time { color: var(--text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none; }
-  ul.runs .what { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
-  .runs code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; background: none; padding: 0; color: var(--text-muted); }
+  .runs .what { color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+  .runs code { display: block; font-size: 11.5px; background: none; padding: 0; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
   .runs .failed .what, .runs .failed code { color: var(--critical); }
-  @media (max-width: 560px) {
-    /* Narrow: what each command was for; the command itself on hover/long-press. */
-    ul.runs .what { max-width: none; flex: 1 1 auto; min-width: 0; }
-    ul.runs .what + code { display: none; }
-  }
   .runs .tool { font-size: 11.5px; font-weight: 600; flex: none; }
   .outcome code { font-size: 12px; }
   .outcome.warn { color: var(--text-primary); }

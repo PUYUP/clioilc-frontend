@@ -265,11 +265,8 @@ function projectDigest(projectId, name, items, messages) {
   };
 }
 
-/** One line of a command's summary ("Run tests: cargo test …"). @param {string} text */
-function runText(text) {
-  const line = text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
-  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
-}
+/** A command's summary as stored ("Run tests: cargo test"), whole. @param {string} text */
+const runText = (text) => text.trim();
 
 /** First meaningful line of a prompt; null for harness noise. @param {string} text */
 export function promptLine(text) {
