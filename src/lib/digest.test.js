@@ -84,7 +84,8 @@ describe("buildDigest", () => {
     const { projects, totals } = buildDigest(day);
     expect(projects).toHaveLength(1);
     const p = projects[0];
-    expect(p.prompts).toEqual(["add a login page"]);
+    expect(p.prompts.map((x) => x.text)).toEqual(["add a login page"]);
+    expect(p.prompts[0].ts).toBeInstanceOf(Date);
     expect(p.commits.map((c) => c.message)).toEqual(["Add login page"]);
     expect(p.pushed).toBe(true);
     // The commit came from the command only (no file list): nothing is claimed uncommitted.

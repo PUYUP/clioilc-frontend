@@ -221,8 +221,8 @@
                 {#if p.prompts.length}
                   <h4>You asked</h4>
                   <ul class="prompts">
-                    {#each open.has(`${id}:prompts`) ? p.prompts : p.prompts.slice(0, PROMPTS) as text, k (k)}
-                      <li>{text}</li>
+                    {#each open.has(`${id}:prompts`) ? p.prompts : p.prompts.slice(0, PROMPTS) as q, k (k)}
+                      <li><time datetime={q.ts.toISOString()}>{clock(q.ts)}</time> <span class="msg">{q.text}</span></li>
                     {/each}
                   </ul>
                   {#if p.prompts.length > PROMPTS}
@@ -323,7 +323,10 @@
   h4 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin: 14px 0 6px; display: flex; align-items: center; gap: 8px; }
   ul { margin: 0; padding-left: 18px; font-size: 14px; }
   li { margin: 2px 0; overflow-wrap: anywhere; }
-  .prompts li { color: var(--text-primary); }
+  .prompts { list-style: none; padding-left: 0; }
+  .prompts li { color: var(--text-primary); display: flex; gap: 8px; align-items: baseline; }
+  .prompts time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
+  .prompts .msg { min-width: 0; overflow-wrap: anywhere; }
   .commits { list-style: none; padding-left: 0; }
   .commits time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   .commits li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }

@@ -11,7 +11,7 @@
  *   sessions: number,
  *   activeMs: number,
  *   costUsd: number,
- *   prompts: string[],
+ *   prompts: { text: string, ts: Date }[],
  *   commits: { message: string, ts: Date, commit?: import("./commits.js").Commit }[],
  *   pushed: boolean,
  *   uncommitted: { path: string, edits: number }[] | null,
@@ -93,12 +93,13 @@ function projectDigest(projectId, name, items, messages) {
     if (m && m.status !== "ok") failedMessages.add(i.messageId);
   }
 
-  /** @type {string[]} */
+  /** @type {{ text: string, ts: Date }[]} */
   const prompts = [];
   for (const i of items) {
     if (i.kind !== "prompt" || i.isSubagent) continue;
     const line = promptLine(i.text);
-    if (line && !prompts.includes(line)) prompts.push(line);
+    // The same line asked again keeps its first time.
+    if (line && !prompts.some((p) => p.text === line)) prompts.push({ text: line, ts: i.ts });
   }
 
   /** @type {{ message: string, ts: Date, commit?: import("./commits.js").Commit }[]} */
