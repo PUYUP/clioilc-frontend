@@ -6,7 +6,7 @@
 /**
  * @typedef {{ path: string, insertions: number | null, deletions: number | null }} FileChange
  * @typedef {{ hash: string, branch: string | null, subject: string, remote: string | null,
- *   files?: number, insertions?: number, deletions?: number, changes: FileChange[] }} Commit
+ *   files?: number, insertions?: number, deletions?: number, changes: FileChange[], root?: string }} Commit
  */
 
 const HASH = /^[0-9a-f]{7,64}$/;
@@ -26,6 +26,7 @@ export function commitsOf(raw) {
       remote: typeof c.remote === "string" && REMOTE.test(c.remote) ? c.remote : null,
       ...stats(c),
       changes: changesOf(c.changes),
+      ...(typeof c.root === "string" && c.root.startsWith("/") ? { root: c.root.replace(/\/+$/, "") } : {}),
     });
   }
   return out;

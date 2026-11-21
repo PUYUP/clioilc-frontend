@@ -14,7 +14,8 @@
  *   prompts: string[],
  *   commits: { message: string, ts: Date, commit?: import("./commits.js").Commit }[],
  *   pushed: boolean,
- *   files: { path: string, edits: number }[],
+ *   uncommitted: { path: string, edits: number }[] | null,
+ *   filesChanged: number,
  *   commands: number,
  *   toolErrors: number,
  *   messageErrors: number,
@@ -52,7 +53,7 @@ export function buildDigest(day) {
     totals.activeMs += p.activeMs;
     totals.prompts += p.prompts.length;
     totals.commits += p.commits.length;
-    totals.files += p.files.length;
+    totals.files += p.filesChanged;
     totals.errors += p.toolErrors + p.messageErrors;
   }
   return { projects, totals };
@@ -103,12 +104,18 @@ function projectDigest(projectId, name, items, messages) {
   /** @type {{ message: string, ts: Date, commit?: import("./commits.js").Commit }[]} */
   const commits = [];
   let pushed = false;
+  /** Last edit time per file (ms). @type {Map<string, number>} */
+  const lastEdit = new Map();
   /** @type {Map<string, number>} */
   const files = new Map();
   /** @type {Map<string, number>} */
   const failing = new Map();
   let commands = 0;
   let toolErrors = 0;
+  // Data from a tracker that finds commits itself: trust only those. Reading
+  // a message out of a command matches text that merely mentions
+  // `git commit` (a script, a test), so it is only a fallback for older data.
+  const trackerCommits = items.some((i) => (i.tool?.commits?.length ?? 0) > 0);
   for (const i of items) {
     if (i.kind !== "tool" || !i.tool) continue;
     const { name: tool, status } = i.tool;
@@ -126,15 +133,42 @@ function projectDigest(projectId, name, items, messages) {
       for (const c of found) {
         if (!commits.some((x) => x.commit?.hash === c.hash)) commits.push({ message: c.subject, ts: i.ts, commit: c });
       }
-      const msg = found.length ? null : commitMessage(i.text);
+      const msg = found.length || trackerCommits ? null : commitMessage(i.text);
       if (msg && !commits.some((c) => c.message === msg)) commits.push({ message: msg, ts: i.ts });
       if (/\bgit\s+push\b/.test(i.text)) pushed = true;
     } else if (EDIT_TOOLS.has(tool) && isProjectFile(i.text)) {
       files.set(i.text, (files.get(i.text) ?? 0) + 1);
+      lastEdit.set(i.text, i.ts.getTime());
     }
   }
 
   const base = name ? projectRoot(name, [...files.keys()]) : null;
+  const shown = (/** @type {string} */ path) => (base && path.startsWith(base) ? path.slice(base.length) : path);
+
+  // What reached a commit that day, as absolute paths (root + relative
+  // path), with the time of the last commit that had it.
+  /** @type {Map<string, number>} */
+  const committed = new Map();
+  // Without each commit's file list (older data, or a commit the tracker
+  // could not find), what is left uncommitted cannot be told: say nothing.
+  let known = true;
+  for (const c of commits) {
+    if (!c.commit?.changes?.length || !c.commit.root) {
+      known = false;
+      continue;
+    }
+    for (const f of c.commit.changes) {
+      const key = `${c.commit.root}/${f.path}`;
+      committed.set(key, Math.max(committed.get(key) ?? 0, c.ts.getTime()));
+    }
+  }
+  const uncommitted = known
+    ? [...files.entries()]
+        // Never committed, or edited again after its last commit.
+        .filter(([path]) => (lastEdit.get(path) ?? 0) > (committed.get(path) ?? -1))
+        .map(([path, edits]) => ({ path: shown(path), edits }))
+        .sort((a, b) => b.edits - a.edits || a.path.localeCompare(b.path))
+    : null;
   return {
     projectId,
     name,
@@ -144,9 +178,12 @@ function projectDigest(projectId, name, items, messages) {
     prompts,
     commits,
     pushed,
-    files: [...files.entries()]
-      .map(([path, edits]) => ({ path: base && path.startsWith(base) ? path.slice(base.length) : path, edits }))
-      .sort((a, b) => b.edits - a.edits || a.path.localeCompare(b.path)),
+    uncommitted,
+    // Files changed: those in the day's commits plus edits not committed; the
+    // edited files when commit file lists are not known.
+    filesChanged: known
+      ? new Set([...committed.keys(), ...[...files.keys()].filter((f) => (lastEdit.get(f) ?? 0) > (committed.get(f) ?? -1))]).size
+      : files.size,
     commands,
     toolErrors,
     messageErrors: failedMessages.size,

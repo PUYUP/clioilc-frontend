@@ -87,7 +87,9 @@ describe("buildDigest", () => {
     expect(p.prompts).toEqual(["add a login page"]);
     expect(p.commits.map((c) => c.message)).toEqual(["Add login page"]);
     expect(p.pushed).toBe(true);
-    expect(p.files).toEqual([{ path: "src/login.ts", edits: 2 }]);
+    // The commit came from the command only (no file list): nothing is claimed uncommitted.
+    expect(p.uncommitted).toBeNull();
+    expect(p.filesChanged).toBe(1);
     expect(p.toolErrors).toBe(1);
     expect(p.messageErrors).toBe(1);
     expect(p.failingTools).toEqual([{ name: "Bash", count: 1 }]);
@@ -111,5 +113,47 @@ describe("digest commits", () => {
     ];
     const { projects } = buildDigest({ items: /** @type {any} */ (items), projects: new Map([["p1", "-w-pay"]]), messages: new Map() });
     expect(projects[0].commits).toEqual([{ message: "Fix login", ts, commit }]);
+  });
+});
+
+
+describe("files not committed", () => {
+  const at = (/** @type {number} */ m) => new Date(Date.UTC(2026, 10, 20, 3, m));
+  /** @param {string} id @param {number} m @param {string} path */
+  const edit = (id, m, path) => ({ id, ts: at(m), kind: "tool", text: path, projectId: "p1", sessionId: "s", isSubagent: false, status: "ok", tool: { name: "Edit", status: "ok", error: null, commits: [] } });
+  /** @param {string} id @param {number} m @param {string[]} paths */
+  const commit = (id, m, paths) => ({
+    id, ts: at(m), kind: "tool", text: "git commit -qm x", projectId: "p1", sessionId: "s", isSubagent: false, status: "ok",
+    tool: { name: "Bash", status: "ok", error: null, commits: [{ hash: id.padEnd(40, "a"), subject: id, root: "/w/app/backend", changes: paths.map((p) => ({ path: p, insertions: 1, deletions: 0 })) }] },
+  });
+  const digestOf = (/** @type {any[]} */ items) =>
+    buildDigest({ items, projects: new Map([["p1", "-w-app"]]), messages: new Map() }).projects[0];
+
+  it("lists only edits that no later commit holds, matching by repository", () => {
+    const p = digestOf([
+      edit("e1", 1, "/w/app/backend/docs/journal.md"),
+      edit("e2", 2, "/w/app/backend/README.md"),
+      edit("e3", 3, "/w/app/tracker/README.md"), // same name, another repository
+      commit("c1", 5, ["docs/journal.md", "README.md"]),
+      edit("e4", 7, "/w/app/backend/README.md"), // edited again after its commit
+    ]);
+    expect(p.uncommitted).toEqual([
+      { path: "backend/README.md", edits: 2 },
+      { path: "tracker/README.md", edits: 1 },
+    ]);
+    // journal.md, backend/README.md (committed, then edited again: counted once), tracker/README.md.
+    expect(p.filesChanged).toBe(3);
+  });
+
+  it("ignores commands that only mention git commit when the tracker reports commits", () => {
+    const script = { ...edit("s1", 4, ""), text: "python3 - <<'EOF'\nrun('git commit -qm fake')\nEOF", tool: { name: "Bash", status: "ok", error: null, commits: [] } };
+    const p = digestOf([edit("e1", 1, "/w/app/backend/docs/journal.md"), commit("c1", 2, ["docs/journal.md"]), script]);
+    expect(p.commits.map((c) => c.message)).toEqual(["c1"]);
+    expect(p.uncommitted).toEqual([]);
+  });
+
+  it("is empty when everything was committed", () => {
+    const p = digestOf([edit("e1", 1, "/w/app/backend/docs/journal.md"), commit("c1", 2, ["docs/journal.md"])]);
+    expect(p.uncommitted).toEqual([]);
   });
 });

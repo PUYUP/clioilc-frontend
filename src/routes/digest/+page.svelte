@@ -252,16 +252,16 @@
                   </ul>
                 {/if}
 
-                {#if p.files.length}
-                  <h4>Files changed <span class="n">{p.files.length}</span></h4>
+                {#if p.uncommitted?.length}
+                  <h4>{relDay(date) === "Today" ? "Not committed yet" : "Not committed that day"} <span class="n">{p.uncommitted.length}</span></h4>
                   <ul class="files">
-                    {#each open.has(`${id}:files`) ? p.files : p.files.slice(0, FILES) as f (f.path)}
+                    {#each open.has(`${id}:files`) ? p.uncommitted : p.uncommitted.slice(0, FILES) as f (f.path)}
                       <li><code title={f.path}>{f.path}</code>{#if f.edits > 1}<span class="n">×{f.edits}</span>{/if}</li>
                     {/each}
                   </ul>
-                  {#if p.files.length > FILES}
+                  {#if p.uncommitted.length > FILES}
                     <button class="more" onclick={() => toggle(`${id}:files`)}>
-                      {open.has(`${id}:files`) ? "Show less" : `+${p.files.length - FILES} more`}
+                      {open.has(`${id}:files`) ? "Show less" : `+${p.uncommitted.length - FILES} more`}
                     </button>
                   {/if}
                 {/if}
@@ -280,7 +280,7 @@
                   </p>
                 {/if}
 
-                {#if !p.prompts.length && !p.commits.length && !p.files.length && !p.toolErrors && !p.messageErrors}
+                {#if !p.prompts.length && !p.commits.length && !p.uncommitted?.length && !p.toolErrors && !p.messageErrors}
                   <p class="muted small">{count(p.commands, "command")} run, no file changes.</p>
                 {/if}
               </article>
