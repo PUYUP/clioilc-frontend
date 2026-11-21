@@ -96,3 +96,20 @@ describe("buildDigest", () => {
     expect(totals).toMatchObject({ commits: 1, files: 1, errors: 2, sessions: 1 });
   });
 });
+
+
+describe("digest commits", () => {
+  it("uses the commits the tracker found, with their hash", () => {
+    const ts = new Date("2026-11-20T03:00:00Z");
+    const commit = { hash: "3c514b0" + "a".repeat(33), branch: "main", subject: "Fix login", remote: "github.com/acme/pay" };
+    const items = [
+      { id: "p", ts, kind: "prompt", text: "fix it", projectId: "p1", sessionId: "s", isSubagent: false, status: null },
+      {
+        id: "t", ts, kind: "tool", text: "Commit: git commit -qm 'Fix login'", projectId: "p1", sessionId: "s", isSubagent: false, status: "ok",
+        tool: { name: "Bash", status: "ok", error: null, commits: [commit] },
+      },
+    ];
+    const { projects } = buildDigest({ items: /** @type {any} */ (items), projects: new Map([["p1", "-w-pay"]]), messages: new Map() });
+    expect(projects[0].commits).toEqual([{ message: "Fix login", ts, commit }]);
+  });
+});

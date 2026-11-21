@@ -12,7 +12,7 @@
  *   activeMs: number,
  *   costUsd: number,
  *   prompts: string[],
- *   commits: { message: string, ts: Date }[],
+ *   commits: { message: string, ts: Date, commit?: import("./commits.js").Commit }[],
  *   pushed: boolean,
  *   files: { path: string, edits: number }[],
  *   commands: number,
@@ -100,7 +100,7 @@ function projectDigest(projectId, name, items, messages) {
     if (line && !prompts.includes(line)) prompts.push(line);
   }
 
-  /** @type {{ message: string, ts: Date }[]} */
+  /** @type {{ message: string, ts: Date, commit?: import("./commits.js").Commit }[]} */
   const commits = [];
   let pushed = false;
   /** @type {Map<string, number>} */
@@ -120,7 +120,13 @@ function projectDigest(projectId, name, items, messages) {
     if (status !== "ok") continue;
     if (tool === "Bash") {
       commands++;
-      const msg = commitMessage(i.text);
+      // Commits the tracker found (hash, branch, size); else the message
+      // read from the command, for data synced before it did.
+      const found = i.tool.commits ?? [];
+      for (const c of found) {
+        if (!commits.some((x) => x.commit?.hash === c.hash)) commits.push({ message: c.subject, ts: i.ts, commit: c });
+      }
+      const msg = found.length ? null : commitMessage(i.text);
       if (msg && !commits.some((c) => c.message === msg)) commits.push({ message: msg, ts: i.ts });
       if (/\bgit\s+push\b/.test(i.text)) pushed = true;
     } else if (EDIT_TOOLS.has(tool) && isProjectFile(i.text)) {

@@ -5,6 +5,7 @@
   import { page } from "$app/state";
   import { ApiError } from "$lib/api.js";
   import { LockedError, loadActivity, projectLabeler } from "$lib/activity.js";
+  import { commitUrl, shortHash } from "$lib/commits.js";
   import { buildDigest, duration } from "$lib/digest.js";
   import { count, isoDate, timeZone, usd } from "$lib/format.js";
   import Login from "$lib/Login.svelte";
@@ -60,6 +61,19 @@
   let loading = $state(false);
   let passphrase = $state("");
   let open = $state(/** @type {Set<string>} */ (new Set()));
+  let copied = $state(/** @type {string | null} */ (null));
+  /** @param {string} hash */
+  async function copyHash(hash) {
+    try {
+      await navigator.clipboard.writeText(hash);
+      copied = hash;
+      setTimeout(() => {
+        if (copied === hash) copied = null;
+      }, 1500);
+    } catch {
+      copied = null;
+    }
+  }
 
   $effect(() => {
     if (!session.user) return;
@@ -236,7 +250,14 @@
                   </h4>
                   <ul class="commits">
                     {#each p.commits as c, k (k)}
-                      <li><time>{clock(c.ts)}</time> {c.message}</li>
+                      {@const url = c.commit ? commitUrl(c.commit) : null}
+                      <li>
+                        <time>{clock(c.ts)}</time>
+                        {#if c.commit}<button class="hash" title="Copy {c.commit.hash}" onclick={() => copyHash(/** @type {string} */ (c.commit?.hash))}><code>{shortHash(c.commit.hash)}</code><span class="copied" aria-live="polite">{copied === c.commit.hash ? "copied" : ""}</span></button>{/if}
+                        <span class="msg">{c.message}</span>
+                        {#if c.commit?.insertions != null}<span class="stat"><span class="add">+{c.commit.insertions}</span> <span class="del">−{c.commit.deletions}</span></span>{/if}
+                        {#if url}<a class="ext" href={url} target="_blank" rel="noopener noreferrer">open ↗</a>{/if}
+                      </li>
                     {/each}
                   </ul>
                 {/if}
@@ -317,7 +338,17 @@
   li { margin: 2px 0; overflow-wrap: anywhere; }
   .prompts li { color: var(--text-primary); }
   .commits { list-style: none; padding-left: 0; }
-  .commits time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .commits time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .commits li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+  .commits .msg { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
+  .hash { border: 1px solid var(--grid); background: var(--ghost); border-radius: 6px; padding: 0 6px; font-size: 12px; cursor: copy; }
+  .hash code { background: none; padding: 0; }
+  .copied { margin-left: 4px; color: var(--good); font-size: 11px; }
+  .copied:empty { display: none; }
+  .stat { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
+  .add { color: var(--good); }
+  .del { color: var(--critical); }
+  .ext { font-size: 12px; color: var(--accent); text-decoration: none; white-space: nowrap; }
   .files { list-style: none; padding-left: 0; display: grid; gap: 2px; }
   .files code { font-size: 12.5px; background: var(--ghost); border-radius: 4px; padding: 1px 5px; }
   .n { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 6px; font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
